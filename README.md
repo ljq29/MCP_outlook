@@ -505,6 +505,16 @@ printf 'https://outlook-mcp.example.com/graph/%s/%s\n' \
   "$OUTLOOK_MCP_ACCOUNT" "$OUTLOOK_MCP_BEARER_TOKEN"
 ```
 
+### 从 GHCR 拉取自动构建的镜像
+
+仓库内置 GitHub Actions workflow（`.github/workflows/docker-image.yml`）：push 到 `main` 时构建并推送 `main` / `sha-*` tag，push `v*` 版本 tag（例如 `v0.1.48`）时额外构建 `0.1.48`、`0.1`、`latest` tag。镜像发布在 GHCR：
+
+```bash
+docker pull ghcr.io/ljq29/mcp_outlook:main
+```
+
+首次发布后，GHCR package 默认是 private；想公开拉取需在 GitHub → Packages → `mcp_outlook` → Package settings 中把可见性改为 Public。
+
 ### 直接用 Dockerfile 构建镜像
 
 先构建镜像：
