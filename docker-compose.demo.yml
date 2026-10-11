@@ -1,0 +1,71 @@
+services:
+  outlookmcp:
+    image: outlook-mcp:0.1.48
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: outlookmcp-app
+    restart: unless-stopped
+    mem_limit: 256m
+
+    expose:
+      - 8000
+
+    environment:
+      OUTLOOK_CONFIG_FILE: /config/outlook-mcp.json
+      OUTLOOK_GRAPH_CLIENT_ID: ${OUTLOOK_GRAPH_CLIENT_ID:-}
+      # 生产环境必须固定设置。生成方式：openssl rand -hex 32
+      OUTLOOK_MCP_CSRF_KEY: ${OUTLOOK_MCP_CSRF_KEY:?missing_OUTLOOK_MCP_CSRF_KEY}
+      OUTLOOK_MCP_DB: /data/outlook-mcp.sqlite3
+      OUTLOOK_MCP_HTTP_HOST: 0.0.0.0
+      OUTLOOK_MCP_HTTP_PORT: "8000"
+      OUTLOOK_MCP_SECRET_MIN_LENGTH: "${OUTLOOK_MCP_SECRET_MIN_LENGTH:-16}"
+      OUTLOOK_MCP_TRUST_PROXY_HEADERS: "1"
+      FORWARDED_ALLOW_IPS: "172.16.0.0/12,10.0.0.0/8"
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+
+    # HTTP credential 不会由浏览器 GET 自动创建。容器启动后显式执行：
+    #   docker compose -f docker-compose.demo.yml exec outlookmcp \
+    #     uv run python -m outlook_mcp.credential_store register \
+    #     graph "$OUTLOOK_MCP_ACCOUNT" "$OUTLOOK_MCP_BEARER_TOKEN" \
+    #     --db /data/outlook-mcp.sqlite3
+    # Bearer token 默认至少 16 characters；公网部署仍应使用高熵 token。
+
+    # 域名和服务名可用环境变量覆盖，例如 export DOMAIN=mcp.example.com AppName=outlookmcp；
+    # 未设置时使用下方 ${DOMAIN:-...} / ${AppName:-...} 的默认值。
+
+    # 容器以 UID 1000 运行，挂载目录和文件必须对该 UID 可读写，否则 SQLite 会报
+    # "attempt to write a readonly database"。首次部署或权限不对时执行：
+    #   chown -R 1000:1000 /volume1/Docker/outlookmcp/data
+    #   chmod 666 /volume1/Docker/outlookmcp/data/*.sqlite3*  (已有数据库文件时)
+    # 如果宿主 UID 不是 1000，可取消下面注释并改为宿主用户的 UID:GID：
+    # user: "1000:1000"
+    volumes:
+      - /volume1/Docker/outlookmcp/outlook-mcp.json:/config/outlook-mcp.json:rw
+      - /volume1/Docker/outlookmcp/data:/data
+
+    networks:
+      - traefik
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.services.${AppName:-outlookmcp}-backend.loadbalancer.server.port=8000"
+      - "traefik.http.services.${AppName:-outlookmcp}-backend.loadbalancer.server.scheme=http"
+      - "traefik.http.middlewares.${AppName:-outlookmcp}-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.${AppName:-outlookmcp}-redirect.redirectscheme.permanent=true"
+      - "traefik.http.routers.${AppName:-outlookmcp}-web.entrypoints=http"
+      - "traefik.http.routers.${AppName:-outlookmcp}-web.rule=Host(`${DOMAIN:-outlook-mcp.example.com}`)"
+      - "traefik.http.routers.${AppName:-outlookmcp}-web.middlewares=${AppName:-outlookmcp}-redirect"
+      - "traefik.http.routers.${AppName:-outlookmcp}-web.service=${AppName:-outlookmcp}-backend"
+      - "traefik.http.routers.${AppName:-outlookmcp}-ssl.entrypoints=https,https8443"
+      - "traefik.http.routers.${AppName:-outlookmcp}-ssl.rule=Host(`${DOMAIN:-outlook-mcp.example.com}`)"
+      - "traefik.http.routers.${AppName:-outlookmcp}-ssl.tls=true"
+      - "traefik.http.routers.${AppName:-outlookmcp}-ssl.tls.certresolver=le"
+      - "traefik.http.routers.${AppName:-outlookmcp}-ssl.middlewares=gzip@file,secure-headers@file"
+      - "traefik.http.routers.${AppName:-outlookmcp}-ssl.service=${AppName:-outlookmcp}-backend"
+
+networks:
+  traefik:
+    external: true

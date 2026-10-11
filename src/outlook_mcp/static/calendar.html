@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#1459c7">
+<title>Outlook 日历 - __ACCOUNT__</title>
+<link rel="icon" type="image/svg+xml" href="__APP_ICON_URL__">
+<style>__PICO_CSS__</style>
+<style>__CALENDAR_CSS__</style>
+</head>
+<body>
+<div class="cal-mobile-backdrop" id="panel-backdrop" hidden></div>
+<main class="cal-shell">
+  <section class="cal-stage">
+    <div class="cal-stage__meta">
+      <div>
+        <p class="cal-eyebrow">Graph 日历</p>
+        <h1>Outlook 日历</h1>
+        <p class="cal-account">__ACCOUNT__</p>
+      </div>
+      <div class="cal-stage__actions">
+        <div class="cal-stage__status">
+          <p class="cal-timezone" id="calendar-timezone">显示时区：本地时间</p>
+          <p class="cal-cache-status" id="calendar-cache-status">等待加载最新日程...</p>
+        </div>
+        <div class="cal-stage__buttons">
+          <button type="button" class="cal-btn cal-btn-secondary" id="btn-refresh-calendar">刷新</button>
+          <button type="button" class="cal-btn cal-btn-primary" id="btn-new-event">新建日程</button>
+        </div>
+      </div>
+    </div>
+    <nav class="cal-tabs" aria-label="日历页面">
+      <button type="button" class="cal-tab" id="tab-calendar" aria-selected="true">日历</button>
+      <button type="button" class="cal-tab" id="tab-drafts" aria-selected="false">草稿</button>
+    </nav>
+    <section class="cal-view" id="calendar-view">
+      <div class="cal-status" id="calendar-status" hidden></div>
+      <div class="cal-loading" id="cal-loading" hidden>加载日程中...</div>
+      <div id="calendar" aria-label="Outlook 日历"></div>
+    </section>
+    <section class="cal-view cal-drafts-view" id="drafts-view" hidden aria-labelledby="drafts-title">
+      <div class="cal-drafts-header">
+        <div>
+          <h2 id="drafts-title">日程草稿</h2>
+          <p>新建和编辑草稿会在所有使用当前 credential 的设备间同步。</p>
+        </div>
+        <button type="button" class="cal-btn cal-btn-secondary" id="btn-refresh-drafts">刷新草稿</button>
+      </div>
+      <section class="cal-retention" aria-labelledby="retention-title">
+        <div>
+          <h3 id="retention-title">草稿保留期限</h3>
+          <p>默认永久保留；设置期限后按最后暂存时间计算。</p>
+        </div>
+        <div class="cal-retention__controls">
+          <select id="draft-retention-mode" aria-label="草稿保留方式">
+            <option value="forever">永久保留</option>
+            <option value="days">按天数保留</option>
+          </select>
+          <input id="draft-retention-days" type="number" min="1" max="3650" step="1" value="30" aria-label="草稿保留天数" hidden>
+          <button type="button" class="cal-btn cal-btn-secondary" id="btn-save-retention">保存设置</button>
+        </div>
+      </section>
+      <div class="cal-drafts-status" id="drafts-status" hidden></div>
+      <div class="cal-drafts-list" id="drafts-list" role="list"></div>
+      <p class="cal-empty-inline" id="drafts-empty" hidden>暂无草稿。</p>
+    </section>
+  </section>
+
+  <aside class="cal-panel" id="editor-panel" aria-label="日历详情面板" aria-live="polite">
+    <section class="cal-panel__empty" id="panel-empty">
+      <p class="cal-panel__kicker">日历概览</p>
+      <h2>准备安排什么？</h2>
+      <p>选择一个事件，或快速创建新的日程。</p>
+      <div class="cal-panel__empty-actions">
+        <button type="button" class="cal-btn cal-btn-primary" id="btn-empty-new-event">新建日程</button>
+        <button type="button" class="cal-btn cal-btn-secondary" id="btn-empty-today">回到今天</button>
+      </div>
+      <section class="cal-panel__upcoming" aria-labelledby="upcoming-title">
+        <div class="cal-section__header">
+          <h3 id="upcoming-title">接下来</h3>
+        </div>
+        <div class="cal-upcoming-list" id="upcoming-list"></div>
+        <p class="cal-empty-inline" id="upcoming-empty">当前视图没有接下来的日程。</p>
+      </section>
+    </section>
+
+    <section class="cal-panel__day-agenda" id="panel-day-agenda" hidden>
+      <div class="cal-panel__header">
+        <div class="cal-panel__title">
+          <p class="cal-panel__kicker">日期日程</p>
+          <h2 id="day-agenda-title">当天日程</h2>
+        </div>
+        <div class="cal-panel__header-actions">
+          <button type="button" class="cal-btn cal-btn-primary" id="btn-day-new-event">新建日程</button>
+          <button type="button" class="cal-icon-button" id="btn-close-day-agenda" aria-label="清除日期选择">&times;</button>
+        </div>
+      </div>
+      <div class="cal-day-agenda__body">
+        <p class="cal-day-agenda__summary" id="day-agenda-summary"></p>
+        <div class="cal-day-agenda-list" id="day-agenda-list" role="list" aria-labelledby="day-agenda-title"></div>
+        <p class="cal-empty-inline" id="day-agenda-empty" hidden>当天没有安排。</p>
+      </div>
+    </section>
+
+    <section class="cal-panel__loading" id="panel-loading" hidden>
+      <div class="cal-panel__header">
+        <div class="cal-panel__title">
+          <h2 id="panel-loading-title">加载日程...</h2>
+        </div>
+        <button type="button" class="cal-icon-button" id="btn-close-loading" aria-label="关闭">&times;</button>
+      </div>
+      <div class="cal-panel__loading-body">
+        <div class="cal-spinner" aria-hidden="true"></div>
+        <p id="panel-loading-message">正在读取日程详情...</p>
+      </div>
+    </section>
+
+    <form id="event-form" class="cal-form" aria-labelledby="panel-title" autocomplete="off" hidden>
+      <div class="cal-panel__header">
+        <div class="cal-panel__title">
+          <h2 id="panel-title">新建日程</h2>
+        </div>
+        <div class="cal-panel__header-actions">
+          <button type="button" class="cal-btn cal-btn-danger" id="btn-delete" hidden>删除</button>
+          <button type="button" class="cal-btn cal-btn-danger" id="btn-delete-draft" hidden>删除草稿</button>
+          <button type="button" class="cal-btn cal-btn-secondary" id="btn-unlock-draft" hidden>已核对未提交</button>
+          <button type="button" class="cal-btn cal-btn-secondary" id="btn-cancel">取消</button>
+          <button type="button" class="cal-btn cal-btn-secondary" id="btn-save-draft" title="Ctrl+S">暂存</button>
+          <button type="submit" class="cal-btn cal-btn-primary" id="btn-save" title="Ctrl+Enter">保存</button>
+          <button type="button" class="cal-icon-button" id="btn-close-panel" aria-label="关闭">&times;</button>
+        </div>
+      </div>
+
+      <div class="cal-form__body" id="event-form-body">
+        <div class="cal-banner" id="panel-error" hidden></div>
+        <div class="cal-sync-banner" id="remote-update-banner" hidden>
+          <span id="remote-update-message"></span>
+          <button type="button" class="cal-btn cal-btn-secondary cal-btn-inline" id="btn-apply-remote-detail" hidden>覆盖为远端</button>
+        </div>
+
+        <label>主题
+          <input type="text" name="subject" required maxlength="256" placeholder="添加标题">
+        </label>
+        <p class="cal-field-error" data-field-error="subject"></p>
+
+        <div class="datetime-row">
+          <div class="datetime-field">
+            <span class="datetime-label">全天</span>
+            <label class="cal-toggle datetime-all-day">
+              <input type="checkbox" name="is_all_day" id="is-all-day">
+              <span>开启</span>
+            </label>
+          </div>
+          <div class="datetime-field">
+            <label class="datetime-label" for="event-start">开始</label>
+            <input id="event-start" type="datetime-local" name="start" required>
+            <p class="cal-field-error" data-field-error="start"></p>
+          </div>
+          <div class="datetime-field">
+            <label class="datetime-label" for="event-end">结束</label>
+            <input id="event-end" type="datetime-local" name="end" required>
+            <p class="cal-field-error" data-field-error="end"></p>
+          </div>
+        </div>
+
+        <label>地点
+          <input type="text" name="location" maxlength="256" placeholder="添加地点">
+        </label>
+
+        <section class="cal-description-field" id="description-field">
+          <div class="cal-section__header cal-section__header--compact">
+            <h4>说明</h4>
+          </div>
+          <div class="cal-description-editor" id="description-editor">
+            <textarea id="description-textarea" name="body" rows="5" placeholder="添加说明"></textarea>
+          </div>
+        </section>
+
+        <details class="cal-section cal-collapsible" id="meeting-settings">
+          <summary class="cal-section__summary">
+            <div>
+              <h3>会议与提醒</h3>
+              <p class="cal-hint" id="meeting-summary">私人日程可保持收起。</p>
+            </div>
+          </summary>
+
+          <div class="cal-section__body">
+            <div class="cal-inline-field">
+              <label>提醒（距开始前分钟）
+                <input type="number" name="reminder_minutes_before_start" min="0" max="10080" step="1">
+              </label>
+              <p class="cal-hint" id="reminder-note" hidden>提醒只能在新建日程时修改。</p>
+            </div>
+
+            <div class="cal-section__header cal-section__header--compact">
+              <h4>邀请设置</h4>
+              <label class="cal-toggle">
+                <input type="checkbox" name="send_invites" id="send-invites">
+                <span>发送邀请</span>
+              </label>
+            </div>
+            <p class="cal-hint" id="meeting-note"></p>
+
+            <fieldset class="attendees-section">
+              <div class="cal-section__header">
+                <legend>参会人</legend>
+                <button type="button" class="cal-btn cal-btn-secondary cal-btn-inline" id="add-attendee">添加参会人</button>
+              </div>
+              <div id="attendees-list" class="attendees-list"></div>
+              <p class="cal-empty-inline" id="attendees-empty">暂无参会人</p>
+              <p class="cal-field-error" data-field-error="attendees"></p>
+            </fieldset>
+          </div>
+        </details>
+
+        <input type="hidden" name="item_id" id="event-item-id" value="">
+      </div>
+    </form>
+  </aside>
+</main>
+
+<div id="toast-container"></div>
+<script>window.__OUTLOOK_CALENDAR_BOOTSTRAP__ = __APP_BOOTSTRAP__;</script>
+<script src="__FULLCALENDAR_JS_URL__"></script>
+<script src="__FULLCALENDAR_LOCALE_JS_URL__"></script>
+<script src="__TINYMCE_JS_URL__"></script>
+<script src="__CALENDAR_JS_URL__"></script>
+</body>
+</html>

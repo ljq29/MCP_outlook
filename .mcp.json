@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "outlook": {
+      "command": "uv",
+      "args": [
+        "run",
+        "outlook-mcp"
+      ],
+      "cwd": ".",
+      "env": {
+        "OUTLOOK_CONFIG_FILE": "outlook-mcp.json",
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  }
+}

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Outlook Mail · __ACCOUNT__</title>
+  <link rel="icon" href="__APP_ICON_URL__" type="image/svg+xml">
+  <style>__PICO_CSS__</style>
+  <style>__MAIL_CSS__</style>
+</head>
+<body>
+<main class="mail-shell">
+  <section class="mail-workspace" id="mail-workspace" data-mobile-view="list">
+    <nav class="mail-rail" aria-label="邮件快捷操作">
+      <div class="mail-brand" title="Outlook MCP Mail">
+        <img src="__APP_ICON_URL__" alt="">
+        <span>Mail</span>
+      </div>
+      <button type="button" class="mail-rail__action mail-rail__action--primary" id="btn-compose">写信</button>
+      <button type="button" class="mail-rail__action" id="btn-refresh">刷新</button>
+      <span class="mail-rail__spacer"></span>
+      <span class="mail-rail__current" aria-current="page">邮件</span>
+    </nav>
+
+    <div class="folder-backdrop" id="folder-backdrop" hidden></div>
+
+    <aside class="mail-folders" id="folder-pane" data-open="false" aria-labelledby="folders-title">
+      <header class="mail-pane-header mail-folders__header">
+        <div>
+          <p class="mail-kicker">Graph account</p>
+          <h1>Outlook Mail</h1>
+        </div>
+        <button type="button" class="secondary mail-compact-only" id="btn-folders-close">关闭</button>
+      </header>
+      <div class="mail-account-card">
+        <span class="mail-account-card__avatar" aria-hidden="true">O</span>
+        <span>
+          <strong title="__ACCOUNT__">__ACCOUNT__</strong>
+          <small>Microsoft Graph</small>
+        </span>
+      </div>
+      <div class="mail-section-header">
+        <h2 id="folders-title">文件夹</h2>
+        <span id="folders-loading" hidden>加载中…</span>
+      </div>
+      <nav id="folder-list" aria-label="邮件文件夹"></nav>
+    </aside>
+
+    <section class="mail-list-pane" id="list-pane" aria-labelledby="message-list-title">
+      <header class="mail-pane-header mail-list-pane__header">
+        <button type="button" class="secondary mail-compact-only" id="btn-folders-open" aria-expanded="false" aria-controls="folder-pane">文件夹</button>
+        <div class="mail-pane-heading">
+          <h2 id="message-list-title" tabindex="-1">收件箱</h2>
+          <p id="list-mode">最近邮件</p>
+        </div>
+        <span id="list-loading" hidden>加载中…</span>
+      </header>
+      <form class="mail-search" id="search-form">
+        <label class="visually-hidden" for="search-query">按主题搜索</label>
+        <div class="mail-search__row">
+          <input id="search-query" type="search" autocomplete="off" placeholder="按主题搜索">
+          <button type="submit" class="secondary">搜索</button>
+          <button type="button" class="outline" id="btn-clear-search" hidden>清除</button>
+        </div>
+      </form>
+      <div class="message-list" id="message-list" aria-live="polite"></div>
+      <p class="mail-empty" id="list-empty" hidden>当前没有邮件。</p>
+      <footer class="mail-pagination">
+        <button type="button" class="secondary" id="btn-prev" disabled>上一页</button>
+        <span id="page-label">第 1 页</span>
+        <button type="button" class="secondary" id="btn-next" disabled>下一页</button>
+      </footer>
+    </section>
+
+    <section class="mail-detail" id="detail-pane" aria-labelledby="detail-title">
+      <div class="mail-detail__empty" id="detail-empty">
+        <p class="mail-kicker">阅读区</p>
+        <h2>选择一封邮件</h2>
+        <p>选择左侧邮件后，正文会在隔离区域中安全显示。</p>
+      </div>
+      <article id="detail-content" hidden>
+        <div class="mail-detail__toolbar">
+          <button type="button" class="secondary mail-mobile-only" id="btn-detail-back">返回</button>
+          <div class="mail-detail__actions">
+            <button type="button" class="secondary" id="btn-reply">回复</button>
+            <button type="button" class="secondary" id="btn-forward">转发</button>
+            <button type="button" class="secondary" id="btn-toggle-read">标记未读</button>
+            <label class="mail-move-control">
+              <span class="visually-hidden">移动到文件夹</span>
+              <select id="move-folder" aria-label="移动到文件夹"></select>
+              <button type="button" class="secondary" id="btn-move">移动</button>
+            </label>
+            <button type="button" class="contrast" id="btn-delete">删除</button>
+          </div>
+        </div>
+        <div class="mail-detail__scroll">
+          <header class="mail-detail__header">
+            <div>
+              <p class="mail-kicker" id="detail-folder-label">邮件</p>
+              <h2 id="detail-title" tabindex="-1"></h2>
+            </div>
+            <span class="mail-read-badge" id="detail-read-state"></span>
+          </header>
+          <dl class="mail-meta">
+            <div><dt>发件人</dt><dd id="detail-author"></dd></div>
+            <div><dt>收件人</dt><dd id="detail-to"></dd></div>
+            <div id="detail-cc-row"><dt>抄送</dt><dd id="detail-cc"></dd></div>
+            <div><dt>时间</dt><dd id="detail-time"></dd></div>
+          </dl>
+          <div class="mail-body-toolbar">
+            <button type="button" class="outline" id="btn-load-images" hidden>加载外部图片</button>
+            <span id="body-truncated" hidden>正文已截断。</span>
+          </div>
+          <iframe id="mail-body-frame" title="邮件正文" sandbox="allow-popups" referrerpolicy="no-referrer"></iframe>
+          <section class="mail-attachments" id="attachments-section" hidden>
+            <h3>附件</h3>
+            <ul id="attachments-list"></ul>
+            <p>首版仅展示附件信息，不提供下载。</p>
+          </section>
+        </div>
+      </article>
+    </section>
+  </section>
+
+  <div class="mail-status" id="mail-status" hidden role="status" aria-live="polite"></div>
+</main>
+
+<div class="compose-backdrop" id="compose-backdrop" hidden></div>
+<aside class="compose-panel" id="compose-panel" hidden role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="compose-title" tabindex="-1">
+  <form id="compose-form">
+    <header class="compose-panel__header">
+      <div>
+        <p class="mail-kicker" id="compose-mode-label">新邮件</p>
+        <h2 id="compose-title">写信</h2>
+      </div>
+      <button type="button" class="outline" id="btn-compose-close">关闭</button>
+    </header>
+    <label>收件人
+      <input id="compose-to" type="text" autocomplete="off" placeholder="alice@example.com, bob@example.com">
+    </label>
+    <div class="compose-grid">
+      <label>抄送<input id="compose-cc" type="text" autocomplete="off"></label>
+      <label>密送<input id="compose-bcc" type="text" autocomplete="off"></label>
+    </div>
+    <label>主题<input id="compose-subject" type="text" autocomplete="off"></label>
+    <label for="compose-body">正文</label>
+    <textarea id="compose-body"></textarea>
+    <footer class="compose-panel__footer">
+      <span id="compose-status" role="status"></span>
+      <button type="submit" id="btn-send">发送</button>
+    </footer>
+  </form>
+</aside>
+
+<script>window.__OUTLOOK_MAIL_BOOTSTRAP__ = __APP_BOOTSTRAP__;</script>
+<script src="__TINYMCE_JS_URL__"></script>
+<script src="__MAIL_JS_URL__"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "provider": "graph",
+  "email": "yourname@outlook.com",
+  "graph": {
+    "client_id": "9966331f-d9e2-42b2-85bf-5a54280ee60e",
+    "tenant": "consumers",
+    "token_cache_path": "~/.outlook-mcp/msal-token-cache.json",
+    "scopes": [
+      "User.Read",
+      "Mail.ReadWrite",
+      "Mail.Send",
+      "Calendars.ReadWrite",
+      "Contacts.ReadWrite",
+      "Tasks.ReadWrite"
+    ]
+  }
+}
