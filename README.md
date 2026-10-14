@@ -8,7 +8,7 @@ Agent 只调用 MCP 暴露的业务操作，例如 `mail_send`、`calendar_creat
 
 如果只是想先跑起来，推荐走 Docker Compose：
 
-> **前提**：`docker-compose.demo.yml` 面向已有 Traefik 反向代理的部署，声明了 external Docker network `traefik`（下面命令块的第一步会创建它），且默认使用本地构建的镜像 `outlook-mcp:0.1.48`（构建命令见 [直接用 Dockerfile 构建镜像](#直接用-dockerfile-构建镜像)）。没有 Traefik 环境时，新人主路径是本地构建镜像后用 `docker run` 端口映射直接启动，见 [直接用 Dockerfile 构建镜像](#直接用-dockerfile-构建镜像)；或者去掉 compose 文件中的 `networks` / `labels` 配置并加上 `ports: ["8000:8000"]`。镜像 tag 不写死，以 `docker-compose.demo.yml` 中的 `image:` 为准。
+> **前提**：`docker-compose.demo.yml` 面向已有 Traefik 反向代理的部署，声明了 external Docker network `traefik`（下面命令块的第一步会创建它），且默认使用本地构建的镜像 `outlook-mcp:0.2.0`（构建命令见 [直接用 Dockerfile 构建镜像](#直接用-dockerfile-构建镜像)）。没有 Traefik 环境时，新人主路径是本地构建镜像后用 `docker run` 端口映射直接启动，见 [直接用 Dockerfile 构建镜像](#直接用-dockerfile-构建镜像)；或者去掉 compose 文件中的 `networks` / `labels` 配置并加上 `ports: ["8000:8000"]`。镜像 tag 不写死，以 `docker-compose.demo.yml` 中的 `image:` 为准。
 
 ```bash
 docker network create traefik
@@ -418,7 +418,7 @@ export OUTLOOK_MCP_BEARER_TOKEN="$(openssl rand -hex 32)"
 
 ### 从 clone 到 Docker Compose 启动
 
-`docker-compose.demo.yml` 面向 Traefik 反向代理部署，要求宿主机已有外部 Docker network `traefik`，镜像 tag 为本地构建的 `outlook-mcp:0.1.48`。
+`docker-compose.demo.yml` 面向 Traefik 反向代理部署，要求宿主机已有外部 Docker network `traefik`，镜像 tag 为本地构建的 `outlook-mcp:0.2.0`。
 
 ```bash
 git clone https://github.com/ljq29/MCP_outlook.git
@@ -441,12 +441,12 @@ docker compose -f docker-compose.demo.yml logs -f
 
 `OUTLOOK_MCP_CSRF_KEY` 必须是固定 secret。否则容器重启后浏览器里的 CSRF token 会失效；多 worker 部署时还会直接校验失败。
 
-`docker-compose.demo.yml` 默认使用本地镜像 `outlook-mcp:0.1.48`。如果镜像不存在，先运行 `docker build -t outlook-mcp:0.1.48 .`，再执行 `docker compose -f docker-compose.demo.yml up -d`。
+`docker-compose.demo.yml` 默认使用本地镜像 `outlook-mcp:0.2.0`。如果镜像不存在，先运行 `docker build -t outlook-mcp:0.2.0 .`，再执行 `docker compose -f docker-compose.demo.yml up -d`。
 
 已有部署升级到当前镜像：
 
 ```bash
-docker build -t outlook-mcp:0.1.48 .
+docker build -t outlook-mcp:0.2.0 .
 docker compose -f docker-compose.demo.yml up -d --force-recreate
 docker compose -f docker-compose.demo.yml logs -f outlookmcp
 ```
@@ -469,7 +469,7 @@ printf 'https://outlook-mcp.example.com/graph/%s/%s\n' \
 
 ### 从 GHCR 拉取自动构建的镜像
 
-仓库内置 GitHub Actions workflow（`.github/workflows/docker-image.yml`）：push 到 `main` 时构建并推送 `main` / `sha-*` tag，push `v*` 版本 tag（例如 `v0.1.48`）时额外构建 `0.1.48`、`0.1`、`latest` tag。镜像发布在 GHCR：
+仓库内置 GitHub Actions workflow（`.github/workflows/docker-image.yml`）：push 到 `main` 时构建并推送 `main` / `sha-*` tag，push `v*` 版本 tag（例如 `v0.2.0`）时额外构建 `0.2.0`、`0.1`、`latest` tag。镜像发布在 GHCR：
 
 ```bash
 docker pull ghcr.io/ljq29/mcp_outlook:main
@@ -482,7 +482,7 @@ docker pull ghcr.io/ljq29/mcp_outlook:main
 先构建镜像：
 
 ```bash
-docker build -t outlook-mcp:0.1.48 .
+docker build -t outlook-mcp:0.2.0 .
 ```
 
 然后直接启动容器：
@@ -498,7 +498,7 @@ docker run -d \
   -e OUTLOOK_MCP_BEARER_TOKEN="$OUTLOOK_MCP_BEARER_TOKEN" \
   -v "$(pwd)/outlook-mcp.json:/config/outlook-mcp.json:ro" \
   -v outlookmcp-data:/data \
-  outlook-mcp:0.1.48
+  outlook-mcp:0.2.0
 ```
 
 启动后访问对应的 `/{method}/{account}/{token}` 授权 URL。未知 token 不会因浏览器 GET 自动写入数据库：
@@ -514,13 +514,13 @@ MCP 客户端不要使用上面的浏览器授权 URL；客户端配置应使用
 
 ```bash
 # 构建镜像
-docker build -t <your-registry>/outlook-mcp:0.1.48 .
+docker build -t <your-registry>/outlook-mcp:0.2.0 .
 
 # 推送到自己的 registry，例如 ghcr.io、Docker Hub 或自建 registry
-docker push <your-registry>/outlook-mcp:0.1.48
+docker push <your-registry>/outlook-mcp:0.2.0
 ```
 
-发布新版本时，更新版本号并重复上述步骤。当前最新版本：`0.1.48`。
+发布新版本时，更新版本号并重复上述步骤。当前最新版本：`0.2.0`。
 
 ### 用 Docker Compose 直接创建容器
 
@@ -658,7 +658,7 @@ authorize_outlook.bat
 - `src/outlook_mcp/static/mail.html`、`mail.js`、`mail.css`：Mail WebUI
 - `.mcp.json`：项目级 MCP server 配置
 - `Dockerfile`：HTTP MCP 容器镜像
-- `docker-compose.demo.yml`：Traefik Docker demo，使用本地构建的 `outlook-mcp:0.1.48` 镜像并挂载配置和数据目录
+- `docker-compose.demo.yml`：Traefik Docker demo，使用本地构建的 `outlook-mcp:0.2.0` 镜像并挂载配置和数据目录
 - `start_outlook_mcp_http.sh`：Linux HTTP MCP 调试启动器
 - `MCP_INSTALL.md`：给其他 AI Agent 使用的安装说明
 - `outlook-mcp.example.json`：配置示例

@@ -1,6 +1,6 @@
 services:
   outlookmcp:
-    image: outlook-mcp:0.1.48
+    image: outlook-mcp:0.2.0
     # build:
     #   context: .
     #   dockerfile: Dockerfile

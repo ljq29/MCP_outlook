@@ -275,7 +275,7 @@ docker compose -f docker-compose.demo.yml up -d
 已有 Docker 部署升级到当前镜像（本地重新构建后重建容器）：
 
 ```bash
-docker build -t outlook-mcp:0.1.48 .
+docker build -t outlook-mcp:0.2.0 .
 docker compose -f docker-compose.demo.yml up -d --force-recreate
 docker compose -f docker-compose.demo.yml logs -f outlookmcp
 ```
@@ -291,7 +291,7 @@ curl -sk "https://outlook-mcp.example.com/graph/$OUTLOOK_MCP_ACCOUNT/$OUTLOOK_MC
 
 持久化约定：
 
-- 本地构建镜像 `outlook-mcp:0.1.48`（`docker build -t outlook-mcp:0.1.48 .`）
+- 本地构建镜像 `outlook-mcp:0.2.0`（`docker build -t outlook-mcp:0.2.0 .`）
 - `/volume1/Docker/outlookmcp/outlook-mcp.json` 挂载到容器内 `/config/outlook-mcp.json:rw`
 - `/volume1/Docker/outlookmcp/data` 挂载到 `/data`
 - `OUTLOOK_MCP_DB=/data/outlook-mcp.sqlite3`
