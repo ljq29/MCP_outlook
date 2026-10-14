@@ -32,9 +32,7 @@ if not defined OUTLOOK_MCP_BEARER_TOKEN (
 )
 
 echo Note: the first uv run will automatically install dependencies (uv sync).
-echo Registering default debug credential: %OUTLOOK_MCP_METHOD%/%OUTLOOK_MCP_ACCOUNT%
-uv run python -m outlook_mcp.credential_store register "%OUTLOOK_MCP_METHOD%" "%OUTLOOK_MCP_ACCOUNT%" "%OUTLOOK_MCP_BEARER_TOKEN%"
-if errorlevel 1 exit /b %errorlevel%
+echo The server auto-provisions the credential for %OUTLOOK_MCP_ACCOUNT% from OUTLOOK_MCP_BEARER_TOKEN on startup.
 
 echo.
 echo Full MCP JSON:

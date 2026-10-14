@@ -1910,9 +1910,77 @@ def _patch_pending_device_flow(monkeypatch) -> None:
     monkeypatch.setattr("outlook_mcp.graph_client.msal.PublicClientApplication", FakeApp)
 
 
+# --- single-user provisioning and guard ---
+
+
+def test_create_app_provisions_env_bearer_token(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("OUTLOOK_MCP_BEARER_TOKEN", "env-token-at-least-24-chars")
+    _patch_pending_device_flow(monkeypatch)
+    store = CredentialStore(tmp_path / "outlook.sqlite3")
+    app = create_app(store=store, base_config=_graph_config(tmp_path))
+    app.mcp_app = _fake_mcp_app
+
+    assert store.lookup_endpoint("graph", "person@outlook.com", "env-token-at-least-24-chars") is not None
+
+    with TestClient(app) as client:
+        response = client.get("/graph/person@outlook.com/env-token-at-least-24-chars")
+
+    assert response.status_code == 200
+    assert "credential_not_registered" not in response.text
+    assert "Bearer env-token-at-least-24-chars" in response.text
+
+
+def test_create_app_rejects_invalid_env_bearer_token(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("OUTLOOK_MCP_BEARER_TOKEN", "bad token with spaces")
+    store = CredentialStore(tmp_path / "outlook.sqlite3")
+
+    with pytest.raises(ValueError, match="secret may only contain"):
+        create_app(store=store, base_config=_graph_config(tmp_path))
+
+
+def test_create_app_generates_random_token_when_env_missing(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("OUTLOOK_MCP_BEARER_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "outlook_mcp.http_server.secrets.token_urlsafe", lambda n: "generated-token-24-characters-x"
+    )
+    _patch_pending_device_flow(monkeypatch)
+    store = CredentialStore(tmp_path / "outlook.sqlite3")
+    app = create_app(store=store, base_config=_graph_config(tmp_path))
+    app.mcp_app = _fake_mcp_app
+
+    assert store.lookup_endpoint("graph", "person@outlook.com", "generated-token-24-characters-x") is not None
+
+    with TestClient(app) as client:
+        response = client.get("/graph/person@outlook.com/generated-token-24-characters-x")
+
+    assert response.status_code == 200
+    assert "credential_not_registered" not in response.text
+
+
+def test_second_credential_is_rejected_by_single_account_guard(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("OUTLOOK_MCP_BEARER_TOKEN", raising=False)
+    store = CredentialStore(tmp_path / "outlook.sqlite3")
+    store.get_or_create_endpoint("graph", "other@outlook.com", "other-secret-at-least-24-chars")
+    app = create_app(store=store, base_config=_graph_config(tmp_path))
+    app.mcp_app = _fake_mcp_app
+
+    with TestClient(app) as client:
+        page_response = client.get("/graph/other@outlook.com/other-secret-at-least-24-chars")
+        api_response = client.post(
+            "/graph/other@outlook.com/api/mail/list",
+            json={"folder": "inbox", "limit": 20, "offset": 0},
+            headers={"Authorization": "Bearer other-secret-at-least-24-chars"},
+        )
+
+    assert page_response.status_code == 404
+    assert "credential_not_registered" in page_response.text
+    assert api_response.status_code == 403
+    assert api_response.json()["error"] == "auth_required"
+
+
 def _graph_config(tmp_path) -> GraphConfig:
     return GraphConfig(
-        email="configured@outlook.com",
+        email="person@outlook.com",
         client_id="client-id",
         token_cache_path=str(tmp_path / "ignored.json"),
     )

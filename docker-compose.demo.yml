@@ -16,6 +16,9 @@ services:
       OUTLOOK_GRAPH_CLIENT_ID: ${OUTLOOK_GRAPH_CLIENT_ID:-}
       # 生产环境必须固定设置。生成方式：openssl rand -hex 32
       OUTLOOK_MCP_CSRF_KEY: ${OUTLOOK_MCP_CSRF_KEY:?missing_OUTLOOK_MCP_CSRF_KEY}
+      # 可选：固定 bearer token；不设置时 server 启动日志会打印自动生成的 setup URL。
+      OUTLOOK_MCP_BEARER_TOKEN: ${OUTLOOK_MCP_BEARER_TOKEN:-}
+      # 本地状态库（msal cache/日历草稿/操作日志/上传）。
       OUTLOOK_MCP_DB: /data/outlook-mcp.sqlite3
       OUTLOOK_MCP_HTTP_HOST: 0.0.0.0
       OUTLOOK_MCP_HTTP_PORT: "8000"
@@ -24,12 +27,9 @@ services:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
 
-    # HTTP credential 不会由浏览器 GET 自动创建。容器启动后显式执行：
-    #   docker compose -f docker-compose.demo.yml exec outlookmcp \
-    #     uv run python -m outlook_mcp.credential_store register \
-    #     graph "$OUTLOOK_MCP_ACCOUNT" "$OUTLOOK_MCP_BEARER_TOKEN" \
-    #     --db /data/outlook-mcp.sqlite3
-    # Bearer token 默认至少 16 characters；公网部署仍应使用高熵 token。
+    # HTTP credential 由 server 启动时自动 provisioning：设置 OUTLOOK_MCP_BEARER_TOKEN 即固定 token；
+    # 不设置则自动生成随机 token，setup URL 打印在容器启动日志（docker compose logs）。
+    # 公网部署应使用高熵 token。
 
     # 域名和服务名可用环境变量覆盖，例如 export DOMAIN=mcp.example.com AppName=outlookmcp；
     # 未设置时使用下方 ${DOMAIN:-...} / ${AppName:-...} 的默认值。

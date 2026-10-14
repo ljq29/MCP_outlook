@@ -29,7 +29,7 @@ from starlette.staticfiles import StaticFiles
 
 from . import __version__, server
 from .calendar_drafts import dispatch_calendar_draft_api, is_calendar_draft_api
-from .config import EMAIL_RE, RuntimeConfig
+from .config import EMAIL_RE, RuntimeConfig, load_config
 from .credential_store import DEFAULT_DB_PATH, CredentialRecord, CredentialStore, hash_secret
 from .graph_client import GraphClient
 from .launcher_json import validate_secret
@@ -530,9 +530,26 @@ class EndpointRoute:
     action: str | None = None
 
 
+def _lookup_single_account_endpoint(
+    store: CredentialStore,
+    base_config: RuntimeConfig | None,
+    method: str,
+    account: str,
+    secret: str,
+) -> CredentialRecord | None:
+    """Single-user guard: only the endpoint matching the configured Graph account is served."""
+    record = store.lookup_endpoint(method, account, secret)
+    if record is None or base_config is None:
+        return record
+    if (record.method, record.account) != ("graph", base_config.email):
+        return None
+    return record
+
+
 class EndpointScopedMCPApp:
-    def __init__(self, store: CredentialStore):
+    def __init__(self, store: CredentialStore, base_config: RuntimeConfig | None = None):
         self.store = store
+        self.base_config = base_config
         self.mcp_app = server.mcp.streamable_http_app()
         self.static_app = StaticFiles(directory=STATIC_ROOT)
 
@@ -574,7 +591,9 @@ class EndpointScopedMCPApp:
                 return
             secret = route.secret
             auth_url = _auth_url(scope, method, account, secret)
-            record = await asyncio.to_thread(self.store.lookup_endpoint, method, account, secret)
+            record = await asyncio.to_thread(
+                _lookup_single_account_endpoint, self.store, self.base_config, method, account, secret
+            )
             if record is None and not _check_auth_rate(_client_source(scope)):
                 await _auth_rate_limited_response(scope)(scope, receive, send)
                 return
@@ -593,7 +612,9 @@ class EndpointScopedMCPApp:
             if method != "graph":
                 await _calendar_unsupported_page(method, account, auth_url)(scope, receive, send)
                 return
-            record = await asyncio.to_thread(self.store.lookup_endpoint, method, account, secret)
+            record = await asyncio.to_thread(
+                _lookup_single_account_endpoint, self.store, self.base_config, method, account, secret
+            )
             if record is None and not _check_auth_rate(_client_source(scope)):
                 await _auth_rate_limited_response(scope)(scope, receive, send)
                 return
@@ -611,7 +632,9 @@ class EndpointScopedMCPApp:
             if method != "graph":
                 await _mail_unsupported_page(method, account, auth_url)(scope, receive, send)
                 return
-            record = await asyncio.to_thread(self.store.lookup_endpoint, method, account, secret)
+            record = await asyncio.to_thread(
+                _lookup_single_account_endpoint, self.store, self.base_config, method, account, secret
+            )
             if record is None and not _check_auth_rate(_client_source(scope)):
                 await _auth_rate_limited_response(scope)(scope, receive, send)
                 return
@@ -638,7 +661,9 @@ class EndpointScopedMCPApp:
             if not _verify_csrf_token(csrf_token, csrf_action, auth_url):
                 await _auth_action_csrf_error_page(method, account, auth_url)(scope, receive, send)
                 return
-            record = await asyncio.to_thread(self.store.lookup_endpoint, method, account, secret)
+            record = await asyncio.to_thread(
+                _lookup_single_account_endpoint, self.store, self.base_config, method, account, secret
+            )
             if record is None and not _check_auth_rate(_client_source(scope)):
                 await _auth_rate_limited_response(scope)(scope, receive, send)
                 return
@@ -668,7 +693,7 @@ class EndpointScopedMCPApp:
             return
 
         if route.action == "uploads":
-            response = await _upload_response(self.store, scope, receive, method, account)
+            response = await _upload_response(self.store, self.base_config, scope, receive, method, account)
             await response(scope, receive, send)
             return
 
@@ -686,7 +711,7 @@ class EndpointScopedMCPApp:
                     status_code=404,
                 )(scope, receive, send)
                 return
-            await _api_route(route.action, scope, receive, send, method, account, self.store)
+            await _api_route(route.action, scope, receive, send, method, account, self.store, self.base_config)
             return
 
         if scope["method"] == "GET" and not _wants_mcp_stream(scope):
@@ -695,7 +720,9 @@ class EndpointScopedMCPApp:
                 return
             secret = route.secret
             auth_url = _auth_url(scope, method, account, secret)
-            record = await asyncio.to_thread(self.store.lookup_endpoint, method, account, secret)
+            record = await asyncio.to_thread(
+                _lookup_single_account_endpoint, self.store, self.base_config, method, account, secret
+            )
             if record is None and not _check_auth_rate(_client_source(scope)):
                 await _auth_rate_limited_response(scope)(scope, receive, send)
                 return
@@ -740,7 +767,9 @@ class EndpointScopedMCPApp:
             await _missing_bearer_response(scope)(scope, receive, send)
             return
         auth_url = _auth_url(scope, method, account, secret)
-        record = await asyncio.to_thread(self.store.lookup_endpoint, method, account, secret)
+        record = await asyncio.to_thread(
+            _lookup_single_account_endpoint, self.store, self.base_config, method, account, secret
+        )
         if record is None and not _check_auth_rate(_client_source(scope)):
             await _auth_rate_limited_response(scope)(scope, receive, send)
             return
@@ -784,6 +813,36 @@ class EndpointScopedMCPApp:
 _owned_store: CredentialStore | None = None
 
 
+def _provision_single_user_endpoint(store: CredentialStore, base_config: RuntimeConfig) -> None:
+    """Provision the single-user HTTP endpoint from OUTLOOK_MCP_BEARER_TOKEN or a generated token."""
+    env_token = os.environ.get("OUTLOOK_MCP_BEARER_TOKEN", "").strip()
+    if env_token:
+        # An invalid env token is a configuration error; fail fast instead of provisioning garbage.
+        validate_secret(env_token)
+        token = env_token
+        generated = False
+    else:
+        token = secrets.token_urlsafe(24)
+        generated = True
+    try:
+        store.get_or_create_endpoint("graph", base_config.email, token)
+    except Exception:
+        logging.getLogger("outlook_mcp").warning(
+            "failed to provision HTTP endpoint credential for %s", base_config.email, exc_info=True
+        )
+        return
+    if generated:
+        host = os.environ.get("OUTLOOK_MCP_HTTP_HOST", "127.0.0.1")
+        port = os.environ.get("OUTLOOK_MCP_HTTP_PORT", "8000")
+        logging.getLogger("outlook_mcp").info(
+            "no OUTLOOK_MCP_BEARER_TOKEN set; generated a random token. Setup URL: http://%s:%s/graph/%s/%s",
+            host,
+            port,
+            base_config.email,
+            token,
+        )
+
+
 def create_app(
     db_path: str | Path | None = None,
     *,
@@ -796,10 +855,12 @@ def create_app(
     _owned_store = credential_store if store is None else None
     if previous_owned is not None and previous_owned is not credential_store:
         previous_owned.close()
-    server.configure_http_runtime(credential_store, base_config=base_config)
+    resolved_config = base_config if base_config is not None else load_config()
+    _provision_single_user_endpoint(credential_store, resolved_config)
+    server.configure_http_runtime(credential_store, base_config=resolved_config)
     _MAIL_RESPONSE_CACHE.clear()
     _AUTH_FAILURE_BUCKETS.clear()
-    return EndpointScopedMCPApp(credential_store)
+    return EndpointScopedMCPApp(credential_store, resolved_config)
 
 
 def main() -> None:
@@ -973,6 +1034,7 @@ async def _api_route(
     method: str,
     account: str,
     store: CredentialStore,
+    base_config: RuntimeConfig | None = None,
 ) -> None:
     api_path = action[4:]  # strip "api/"
     if scope["method"] != "POST":
@@ -1022,7 +1084,7 @@ async def _api_route(
         await _missing_bearer_response(scope)(scope, receive, send)
         return
     auth_url = _auth_url(scope, method, account, secret)
-    record = await asyncio.to_thread(store.lookup_endpoint, method, account, secret)
+    record = await asyncio.to_thread(_lookup_single_account_endpoint, store, base_config, method, account, secret)
     if record is None and not _check_auth_rate(_client_source(scope)):
         await _auth_rate_limited_response(scope)(scope, receive, send)
         return
@@ -1384,6 +1446,7 @@ def _validate_tool_names(names: list[str], *, source: str) -> None:
 
 async def _upload_response(
     store: CredentialStore,
+    base_config: RuntimeConfig | None,
     scope: dict[str, Any],
     receive: Any,
     method: str,
@@ -1407,7 +1470,7 @@ async def _upload_response(
         return JSONResponse({"ok": False, "error": "invalid_secret", "message": str(exc)}, status_code=400)
     if secret is None:
         return _missing_bearer_response(scope)
-    record = await asyncio.to_thread(store.lookup_endpoint, method, account, secret)
+    record = await asyncio.to_thread(_lookup_single_account_endpoint, store, base_config, method, account, secret)
     if record is None:
         return JSONResponse(
             {
