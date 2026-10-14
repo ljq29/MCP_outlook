@@ -12,7 +12,7 @@ from outlook_mcp.tools import alias_registry
 from outlook_mcp.tools.alias_registry import AliasRegistry
 from outlook_mcp.tools.common import ToolValidationError
 
-NS = "ews:user@example.com"
+NS = "graph:user@example.com"
 
 
 @pytest.fixture(autouse=True)
@@ -67,7 +67,7 @@ def test_is_alias_truth_table():
     assert not alias_registry.is_alias("cal:abcde")  # too short
     assert not alias_registry.is_alias("cal:abcdefg")  # unsupported length
     assert not alias_registry.is_alias("foo:abcdef0123456789")  # unknown prefix
-    assert not alias_registry.is_alias("AQMkADAwAT...long-base64==")  # raw EWS id
+    assert not alias_registry.is_alias("AQMkADAwAT...long-base64==")  # raw Graph id
     assert not alias_registry.is_alias("")
     assert not alias_registry.is_alias(None)
     assert not alias_registry.is_alias(123)
@@ -157,17 +157,17 @@ def test_namespaces_have_independent_collision_and_lru_state(monkeypatch):
 
     monkeypatch.setattr(alias_registry.hashlib, "sha1", lambda *args, **kwargs: _Hash())
     reg = AliasRegistry(capacity=1)
-    first_alias = reg.register("first", "mail", namespace="ews:first@example.com")
-    second_alias = reg.register("second", "mail", namespace="ews:second@example.com")
+    first_alias = reg.register("first", "mail", namespace="graph:first@example.com")
+    second_alias = reg.register("second", "mail", namespace="graph:second@example.com")
 
     assert first_alias == second_alias
-    assert reg.resolve(first_alias, namespace="ews:first@example.com") == "first"
-    assert reg.resolve(second_alias, namespace="ews:second@example.com") == "second"
+    assert reg.resolve(first_alias, namespace="graph:first@example.com") == "first"
+    assert reg.resolve(second_alias, namespace="graph:second@example.com") == "second"
 
-    reg.register("replacement", "cal", namespace="ews:first@example.com")
+    reg.register("replacement", "cal", namespace="graph:first@example.com")
     with pytest.raises(KeyError):
-        reg.resolve(first_alias, namespace="ews:first@example.com")
-    assert reg.resolve(second_alias, namespace="ews:second@example.com") == "second"
+        reg.resolve(first_alias, namespace="graph:first@example.com")
+    assert reg.resolve(second_alias, namespace="graph:second@example.com") == "second"
 
 
 def test_capacity_rejects_zero_and_negative():

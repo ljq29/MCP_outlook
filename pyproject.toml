@@ -1,11 +1,10 @@
 [project]
 name = "outlook-mcp"
 version = "0.1.48"
-description = "MCP server for Microsoft 365 / Outlook.com mail, calendar, contacts and tasks (Microsoft Graph & EWS backends, stdio/HTTP transports)."
+description = "MCP server for Microsoft 365 / Outlook.com mail, calendar, contacts and tasks (Microsoft Graph backend, stdio/HTTP transports)."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "exchangelib>=5.6,<6",
     "mcp>=1.27,<2",
     "msal>=1.36,<2",
     "python-multipart>=0.0.20,<1",

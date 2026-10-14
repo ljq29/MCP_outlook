@@ -778,6 +778,8 @@ def test_graph_mail_search_trash_delete_and_errors(_skip_sleep) -> None:
 
     assert client.mail_search("Hello", limit=1, offset=1)["items"][0]["id"] == "m2"
     assert client.mail_delete("m1", mode="move_to_trash") == {"deleted": True, "mode": "move_to_trash"}
+    with pytest.raises(ToolValidationError, match="mode must be"):
+        client.mail_delete("m1", mode="bogus")
     with pytest.raises(GraphClientError, match="TooManyRequests"):
         client.request("GET", "/me/messages")
     with pytest.raises(ToolValidationError):

@@ -1,6 +1,6 @@
-"""Module-level LRU registry mapping short aliases to long EWS/Graph item IDs.
+"""Module-level LRU registry mapping short aliases to long Graph item IDs.
 
-Long base64 EWS IDs (150+ chars, with ``+/=``) get truncated or mangled when
+Long Graph IDs (150+ chars) get truncated or mangled when
 LLMs copy them across tool calls. This registry replaces them with short,
 deterministic aliases like ``cal:a3f29b1c07d3e529`` so LLM clients see a
 fixed-width string they can round-trip without errors.
@@ -19,8 +19,6 @@ import hashlib
 import re
 import threading
 from collections import OrderedDict
-
-from outlook_mcp.config import GraphConfig
 
 KINDS: tuple[str, ...] = ("cal", "mail", "task", "contact")
 _ALIAS_RE = re.compile(r"^(?P<kind>cal|mail|task|contact):[0-9a-f]{16}$")
@@ -117,7 +115,7 @@ def resolve_or_passthrough(
     - Alias shape but missing from cache -> raise ``ToolValidationError`` with a
       hint to refresh via the corresponding ``*_list`` tool.
     - Anything else -> return unchanged (backward-compatible passthrough for
-      callers that already hold the long EWS/Graph id).
+      callers that already hold the long Graph id).
     """
     if kind not in KINDS:
         raise ValueError(f"Unsupported alias kind: {kind!r}")
@@ -163,7 +161,7 @@ def namespace_for_client(client: object) -> str:
     """Return a stable backend/account namespace for alias mappings."""
     config = getattr(client, "config", None)
     configured_email = getattr(config, "email", None)
-    backend = "graph" if isinstance(config, GraphConfig) else "ews"
+    backend = "graph"
     if configured_email:
         return f"{backend}:{str(configured_email).strip().casefold()}"
 

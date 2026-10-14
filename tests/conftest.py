@@ -1,195 +1,160 @@
 from __future__ import annotations
 
-# NOTE: FakeItem/FakeQuery 等 fake 对象的方法签名（reply/save/complete/create_forward 等）
-# 是对照 src/outlook_mcp/tools/ 的调用方式手写的，并未验证 exchangelib 的真实契约。
-# 升级 exchangelib 版本时需要同步核对这些签名。
-from datetime import date, datetime, timezone
-from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + (320).to_bytes(4, "big") + (180).to_bytes(4, "big") + b"\x08\x02\x00\x00\x00"
 
 
-class FakeQuery:
-    def __init__(self, items: list[Any]):
-        self.items = list(items)
+class FakeGraphClient:
+    """In-memory stand-in for GraphClient: returns preset dicts and records call kwargs."""
 
-    def all(self) -> "FakeQuery":
-        return self
+    def __init__(self, email: str = "person@outlook.com", **responses: Any):
+        self.config = SimpleNamespace(email=email)
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self._responses = dict(responses)
 
-    def order_by(self, field: str) -> "FakeQuery":
-        reverse = field.startswith("-")
-        attr = field[1:] if reverse else field
-        return FakeQuery(sorted(self.items, key=lambda item: getattr(item, attr, None) or "", reverse=reverse))
+    def _record(self, name: str, kwargs: dict[str, Any]) -> Any:
+        self.calls.append((name, kwargs))
+        response = self._responses.get(name)
+        if callable(response):
+            return response(**kwargs)
+        if response is not None:
+            return response
+        return dict(self._DEFAULT_RESPONSES[name])
 
-    def filter(self, **criteria: Any) -> "FakeQuery":
-        result = self.items
-        for key, expected in criteria.items():
-            if key.endswith("__contains"):
-                attr = key.removesuffix("__contains")
-                result = [item for item in result if expected.lower() in str(getattr(item, attr, "")).lower()]
-            else:
-                result = [item for item in result if getattr(item, key, None) == expected]
-        return FakeQuery(result)
+    def last_call(self, name: str) -> dict[str, Any]:
+        for method, kwargs in reversed(self.calls):
+            if method == name:
+                return kwargs
+        raise AssertionError(f"{name} was not called")
 
-    def __getitem__(self, index: Any) -> Any:
-        return self.items[index]
+    def mail_list(self, **kwargs: Any) -> Any:
+        return self._record("mail_list", kwargs)
 
-    def __iter__(self):
-        return iter(self.items)
+    def mail_search(self, **kwargs: Any) -> Any:
+        return self._record("mail_search", kwargs)
 
+    def mail_get(self, **kwargs: Any) -> Any:
+        return self._record("mail_get", kwargs)
 
-class FakeFolder(FakeQuery):
-    def __init__(
-        self,
-        name: str,
-        items: list[Any] | None = None,
-        *,
-        folder_id: str | None = None,
-        folder_class: str = "IPF.Note",
-        child_folders: list["FakeFolder"] | None = None,
-    ):
-        super().__init__(items or [])
-        self.name = name
-        self.id = folder_id or f"folder-{name}"
-        self.folder_class = folder_class
-        self.total_count = len(self.items)
-        self.unread_count = 0
-        self.child_folder_count = len(child_folders or [])
-        self.child_folders = list(child_folders or [])
+    def mail_send(self, **kwargs: Any) -> Any:
+        return self._record("mail_send", kwargs)
 
-    def get(self, id: str) -> Any:
-        for item in self.items:
-            if item.id == id:
-                return item
-        raise KeyError(id)
+    def mail_reply(self, **kwargs: Any) -> Any:
+        return self._record("mail_reply", kwargs)
 
-    def view(self, start: datetime, end: datetime) -> FakeQuery:
-        return FakeQuery([item for item in self.items if start <= item.start < end])
+    def mail_move(self, **kwargs: Any) -> Any:
+        return self._record("mail_move", kwargs)
 
-    def walk(self) -> list["FakeFolder"]:
-        return list(self.child_folders)
+    def mail_delete(self, **kwargs: Any) -> Any:
+        return self._record("mail_delete", kwargs)
 
+    def mail_forward(self, **kwargs: Any) -> Any:
+        return self._record("mail_forward", kwargs)
 
-class FakeItem:
-    def __init__(self, **kwargs: Any):
-        self.id = kwargs.pop("id", "item-1")
-        self.changekey = kwargs.pop("changekey", "ck-1")
-        self.saved = False
-        self.deleted = False
-        self.moved_to = None
-        self.replied = None
-        self.completed = False
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+    def mail_mark_read(self, **kwargs: Any) -> Any:
+        return self._record("mail_mark_read", kwargs)
 
-    def save(self, **kwargs: Any) -> None:
-        self.saved = True
-        self.save_kwargs = kwargs
+    def mail_mark_unread(self, **kwargs: Any) -> Any:
+        return self._record("mail_mark_unread", kwargs)
 
-    def delete(self, **kwargs: Any) -> None:
-        self.deleted = True
-        self.delete_kwargs = kwargs
+    def mail_attachments(self, **kwargs: Any) -> Any:
+        return self._record("mail_attachments", kwargs)
 
-    def soft_delete(self) -> None:
-        self.deleted = "soft"
+    def mail_folders(self, **kwargs: Any) -> Any:
+        return self._record("mail_folders", kwargs)
 
-    def move_to_trash(self) -> None:
-        self.deleted = "trash"
+    def calendar_list(self, **kwargs: Any) -> Any:
+        return self._record("calendar_list", kwargs)
 
-    def move(self, folder: FakeFolder) -> "FakeItem":
-        self.moved_to = folder.name
-        return self
+    def calendar_get(self, **kwargs: Any) -> Any:
+        return self._record("calendar_get", kwargs)
 
-    def reply(self, **kwargs: Any) -> None:
-        self.replied = kwargs
+    def calendar_create(self, **kwargs: Any) -> Any:
+        return self._record("calendar_create", kwargs)
 
-    def complete(self) -> None:
-        self.completed = True
-        self.status = "Completed"
-        self.percent_complete = Decimal(100)
+    def calendar_update(self, **kwargs: Any) -> Any:
+        return self._record("calendar_update", kwargs)
 
-    def create_forward(self, **kwargs: Any) -> "FakeItem":
-        fwd = FakeItem(id="fwd-1", subject=kwargs.get("subject", ""))
-        fwd.sent = False
-        return fwd
+    def calendar_delete(self, **kwargs: Any) -> Any:
+        return self._record("calendar_delete", kwargs)
 
-    def send(self) -> None:
-        self.sent = True
+    def calendar_search(self, **kwargs: Any) -> Any:
+        return self._record("calendar_search", kwargs)
 
+    def contacts_list(self, **kwargs: Any) -> Any:
+        return self._record("contacts_list", kwargs)
 
-class FakeCreatedItem(FakeItem):
-    created: list["FakeCreatedItem"] = []
+    def contacts_search(self, **kwargs: Any) -> Any:
+        return self._record("contacts_search", kwargs)
 
-    def __init__(self, **kwargs: Any):
-        super().__init__(id="new-id", **kwargs)
-        self.attachments = []
-        FakeCreatedItem.created.append(self)
+    def contact_get(self, **kwargs: Any) -> Any:
+        return self._record("contact_get", kwargs)
 
-    def attach(self, attachment: Any) -> None:
-        self.attachments.append(attachment)
+    def contact_create(self, **kwargs: Any) -> Any:
+        return self._record("contact_create", kwargs)
 
-    def send_and_save(self) -> None:
-        self.sent = True
+    def contact_update(self, **kwargs: Any) -> Any:
+        return self._record("contact_update", kwargs)
 
+    def contact_delete(self, **kwargs: Any) -> Any:
+        return self._record("contact_delete", kwargs)
 
-class FakeAccount:
-    def __init__(self):
-        mail = FakeItem(
-            id="mail-1",
-            subject="Quarterly report",
-            body="hello body",
-            datetime_received=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            is_read=False,
-            has_attachments=False,
-        )
-        event = FakeItem(
-            id="cal-1",
-            subject="Planning",
-            start=datetime(2026, 1, 2, 9, tzinfo=timezone.utc),
-            end=datetime(2026, 1, 2, 10, tzinfo=timezone.utc),
-            location="Room 1",
-        )
-        contact = FakeItem(id="contact-1", display_name="Ada Lovelace", email_addresses=[])
-        task = FakeItem(
-            id="task-1",
-            subject="Follow up",
-            due_date=date(2026, 1, 3),
-            status="NotStarted",
-            percent_complete=Decimal(0),
-        )
-        self.inbox = FakeFolder("inbox", [mail])
-        self.sent = FakeFolder("sent", [])
-        self.trash = FakeFolder("trash", [])
-        self.calendar = FakeFolder("calendar", [event], folder_class="IPF.Appointment")
-        self.contacts = FakeFolder("contacts", [contact], folder_class="IPF.Contact")
-        self.tasks = FakeFolder("tasks", [task], folder_class="IPF.Task")
-        self.root = FakeFolder(
-            "root",
-            [mail, event, contact, task],
-            folder_class="IPF.Root",
-            child_folders=[
-                self.inbox,
-                self.sent,
-                self.trash,
-                self.calendar,
-                self.contacts,
-                self.tasks,
-            ],
-        )
+    def tasks_list(self, **kwargs: Any) -> Any:
+        return self._record("tasks_list", kwargs)
 
+    def task_get(self, **kwargs: Any) -> Any:
+        return self._record("task_get", kwargs)
 
-class FakeClient:
-    def __init__(self):
-        self.account = FakeAccount()
+    def task_create(self, **kwargs: Any) -> Any:
+        return self._record("task_create", kwargs)
 
-    def get_folder(self, name: str):
-        return getattr(self.account, {"deleted": "trash"}.get(name, name))
+    def task_update(self, **kwargs: Any) -> Any:
+        return self._record("task_update", kwargs)
 
-    def get_item(self, item_id: str, folder: str | None = None):
-        if folder:
-            return self.get_folder(folder).get(item_id)
-        return self.account.root.get(item_id)
+    def task_delete(self, **kwargs: Any) -> Any:
+        return self._record("task_delete", kwargs)
+
+    def task_search(self, **kwargs: Any) -> Any:
+        return self._record("task_search", kwargs)
+
+    def account_info(self, **kwargs: Any) -> Any:
+        return self._record("account_info", kwargs)
+
+    _DEFAULT_RESPONSES: dict[str, dict[str, Any]] = {
+        "mail_list": {"items": [{"id": "mail-1", "subject": "Quarterly report"}], "has_more": False},
+        "mail_search": {"items": [{"id": "mail-1", "subject": "Quarterly report"}], "has_more": False},
+        "mail_get": {"id": "mail-1", "subject": "Quarterly report", "body": "hello body"},
+        "mail_send": {"sent": True},
+        "mail_reply": {"replied": True, "id": "mail-1"},
+        "mail_move": {"moved": True, "id": "mail-1"},
+        "mail_delete": {"deleted": True},
+        "mail_forward": {"forwarded": True},
+        "mail_mark_read": {"marked": "read", "id": "mail-1"},
+        "mail_mark_unread": {"marked": "unread", "id": "mail-1"},
+        "mail_attachments": {"items": [], "has_more": False, "total": 0},
+        "mail_folders": {"items": [{"id": "folder-inbox", "name": "inbox"}], "has_more": False, "total": 1},
+        "calendar_list": {"items": [{"id": "cal-1", "subject": "Planning"}], "has_more": False},
+        "calendar_get": {"id": "cal-1", "subject": "Planning"},
+        "calendar_create": {"id": "cal-new", "subject": "Meet"},
+        "calendar_update": {"id": "cal-1", "subject": "Planning"},
+        "calendar_delete": {"deleted": True, "id": "cal-1"},
+        "calendar_search": {"items": [{"id": "cal-1", "subject": "Planning"}], "has_more": False},
+        "contacts_list": {"items": [{"id": "contact-1", "display_name": "Ada Lovelace"}], "has_more": False},
+        "contacts_search": {"items": [{"id": "contact-1", "display_name": "Ada Lovelace"}], "has_more": False},
+        "contact_get": {"id": "contact-1", "display_name": "Ada Lovelace"},
+        "contact_create": {"id": "contact-new", "display_name": "Grace Hopper"},
+        "contact_update": {"id": "contact-1", "display_name": "Ada Lovelace"},
+        "contact_delete": {"deleted": True, "id": "contact-1"},
+        "tasks_list": {"items": [{"id": "task-1", "subject": "Follow up"}], "has_more": False},
+        "task_get": {"id": "task-1", "subject": "Follow up"},
+        "task_create": {"id": "task-new", "subject": "Write notes"},
+        "task_update": {"id": "task-1", "subject": "Follow up"},
+        "task_delete": {"deleted": True, "id": "task-1"},
+        "task_search": {"items": [{"id": "task-1", "subject": "Follow up"}], "has_more": False},
+        "account_info": {"primary_smtp_address": "person@outlook.com", "display_name": "Example Person"},
+    }
 
 
 import pytest

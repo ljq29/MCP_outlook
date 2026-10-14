@@ -12,7 +12,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from outlook_mcp import server
-from outlook_mcp.client import OutlookClientError
+from outlook_mcp.tools.common import OutlookClientError
 from outlook_mcp.config import GraphConfig
 from outlook_mcp.credential_store import CredentialStore
 from outlook_mcp.graph_client import GraphClient
@@ -230,7 +230,9 @@ def test_http_api_error_category_maps_to_status(monkeypatch, tmp_path, error: st
 
 
 def test_dispatch_api_redacts_secrets_in_exception_messages(monkeypatch) -> None:
-    monkeypatch.setenv("OUTLOOK_CLIENT_SECRET", "s3cr3t-token-value")
+    from outlook_mcp.config import register_sensitive_value
+
+    register_sensitive_value("s3cr3t-token-value")
 
     def leak(*args: Any, **kwargs: Any) -> None:
         raise ToolValidationError("bad header s3cr3t-token-value rejected")
@@ -1319,30 +1321,6 @@ def test_calendar_page_serves_expired_cache_style(tmp_path) -> None:
     assert ".cal-form__footer" not in response.text
 
 
-def test_calendar_page_rejects_non_graph_method(tmp_path) -> None:
-    store = CredentialStore(tmp_path / "outlook.sqlite3")
-    app = create_app(store=store, base_config=_graph_config(tmp_path))
-    app.mcp_app = _fake_mcp_app
-
-    with TestClient(app) as client:
-        response = client.get("/ews/person@example.com/test-secret-at-least-24-chars/calendar")
-
-    assert response.status_code == 400
-    assert "visual calendar editor is currently available only for Graph HTTP endpoints" in response.text
-
-
-def test_mail_page_rejects_non_graph_method(tmp_path) -> None:
-    store = CredentialStore(tmp_path / "outlook.sqlite3")
-    app = create_app(store=store, base_config=_graph_config(tmp_path))
-    app.mcp_app = _fake_mcp_app
-
-    with TestClient(app) as client:
-        response = client.get("/ews/person@example.com/test-secret-at-least-24-chars/mail")
-
-    assert response.status_code == 400
-    assert "visual mail client is currently available only for Graph HTTP endpoints" in response.text
-
-
 def test_http_forwarded_header_takes_precedence(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("OUTLOOK_MCP_TRUST_PROXY_HEADERS", "1")
     _patch_pending_device_flow(monkeypatch)
@@ -1409,26 +1387,6 @@ def test_http_forwarded_headers_explicitly_disabled_even_with_forwarded_allow_ip
     assert response.status_code == 200
     assert "http://testserver/graph/person@outlook.com" in response.text
     assert "spoofed.example.com" not in response.text
-
-
-def test_http_method_placeholder_returns_method_unsupported(tmp_path) -> None:
-    store = CredentialStore(tmp_path / "outlook.sqlite3")
-    store.get_or_create_endpoint("ews", "person@example.com", "test-secret-at-least-24-chars")
-    app = create_app(store=store, base_config=_graph_config(tmp_path))
-    app.mcp_app = _fake_mcp_app
-
-    with TestClient(app) as client:
-        client.get("/ews/person@example.com/test-secret-at-least-24-chars")
-        response = client.post(
-            "/ews/person@example.com",
-            json={},
-            headers={"Authorization": "Bearer test-secret-at-least-24-chars"},
-        )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error"] == "method_unsupported"
 
 
 def test_http_authorized_page_shows_auth_action_buttons(monkeypatch, tmp_path) -> None:

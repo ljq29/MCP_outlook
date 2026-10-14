@@ -9,9 +9,8 @@ from typing import Any, Protocol
 
 import requests
 
-from .client import OutlookClientError
 from .config import GraphConfig
-from .tools.common import graph_error_message
+from .tools.common import OutlookClientError, graph_error_message
 
 
 GRAPH_HTTP_TIMEOUT_SECONDS = 30.0

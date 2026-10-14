@@ -1,25 +1,26 @@
-"""Shared validation, serialization and error helpers for MCP tools."""
+"""Shared validation and error helpers for MCP tools."""
 
 from __future__ import annotations
 
 import logging
-import os
-from datetime import date, datetime, timezone
-import binascii
 import traceback
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from outlook_mcp.client import OutlookClientError
 from outlook_mcp.config import EMAIL_RE, sensitive_values
 
 DEFAULT_CALENDAR_TIMEZONE = "Asia/Shanghai"
 # 3.5MB total per message/event; Graph /me/sendMail rejects request bodies over ~4MB.
 MAX_ATTACHMENTS_TOTAL_BYTES = 3 * 1024 * 1024 + 512 * 1024
 
-# exchangelib PhoneNumber indexed-property labels; shared by EWS and Graph contact writers.
+# Phone number labels accepted by contact writers; mirrors the Graph phone fields.
 PHONE_LABELS = frozenset({"BusinessPhone", "BusinessPhone2", "HomePhone", "HomePhone2", "MobilePhone"})
+
+
+class OutlookClientError(RuntimeError):
+    """Raised when the Outlook backend cannot access an account, folder or item."""
 
 
 class ToolValidationError(ValueError):
@@ -191,111 +192,6 @@ def parse_percent(value: int | float | str | Decimal | None) -> Decimal | None:
     return percent
 
 
-def to_page(queryset: Any, *, offset: int, limit: int, order_by: str | None = None) -> list[Any]:
-    if order_by and hasattr(queryset, "order_by"):
-        queryset = queryset.order_by(order_by)
-    try:
-        return list(queryset[offset : offset + limit])
-    except TypeError:
-        items = queryset.all() if hasattr(queryset, "all") else queryset
-        return list(items)[offset : offset + limit]
-
-
-def to_page_with_more(
-    queryset: Any,
-    *,
-    offset: int,
-    limit: int,
-    order_by: str | None = None,
-) -> tuple[list[Any], bool]:
-    """Fetch one extra item so ``has_more`` is exact without counting all rows."""
-    candidates = to_page(
-        queryset,
-        offset=offset,
-        limit=limit + 1,
-        order_by=order_by,
-    )
-    return candidates[:limit], len(candidates) > limit
-
-
-def query_filter(queryset: Any, **criteria: Any) -> Any:
-    if hasattr(queryset, "filter"):
-        return queryset.filter(**criteria)
-    return queryset
-
-
-def apply_updates(
-    item: Any,
-    updates: dict[str, Any],
-    allowed: set[str],
-    *,
-    field_parsers: dict[str, Callable[[Any], Any]] | None = None,
-    field_aliases: dict[str, str] | None = None,
-) -> list[str]:
-    """Apply validated updates to an item. Returns list of attribute names that were modified."""
-    if not updates:
-        raise ToolValidationError("updates cannot be empty")
-    parsers = field_parsers or {}
-    aliases = field_aliases or {}
-    fields: list[str] = []
-    for field, value in updates.items():
-        if field not in allowed:
-            raise ToolValidationError(f"Unsupported update field: {field}")
-        attr = aliases.get(field, field)
-        if field in parsers:
-            value = parsers[field](value)
-        setattr(item, attr, value)
-        fields.append(attr)
-    return fields
-
-
-def serialize_item(
-    item: Any,
-    fields: Iterable[str],
-    *,
-    kind: str | None = None,
-    alias_namespace: str | None = None,
-) -> dict[str, Any]:
-    raw_id = serialize_value(getattr(item, "id", getattr(item, "item_id", None)))
-    if kind and isinstance(raw_id, str) and raw_id:
-        from .alias_registry import register as _register_alias
-
-        if not alias_namespace:
-            raise ValueError("alias_namespace is required when serializing an aliased item")
-        out_id = _register_alias(raw_id, kind, namespace=alias_namespace) or raw_id
-    else:
-        out_id = raw_id
-    data: dict[str, Any] = {
-        "id": out_id,
-        "changekey": serialize_value(getattr(item, "changekey", None)),
-    }
-    for field in fields:
-        data[field] = serialize_value(getattr(item, field, None))
-    return data
-
-
-def serialize_value(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, (list, tuple, set)):
-        return [serialize_value(item) for item in value]
-    if hasattr(value, "email_address"):
-        return getattr(value, "email_address")
-    if hasattr(value, "email"):
-        return {"label": getattr(value, "label", None), "email": getattr(value, "email", None)}
-    if hasattr(value, "phone_number"):
-        return {"label": getattr(value, "label", None), "phone_number": getattr(value, "phone_number", None)}
-    if hasattr(value, "mailbox"):
-        return serialize_value(getattr(value, "mailbox"))
-    return str(value)
-
-
 def msal_error_message(payload: dict[str, Any] | None) -> str:
     """Extract a human-readable error from an MSAL response dict."""
     if not payload:
@@ -321,16 +217,8 @@ def graph_error_message(status_code: int, payload: dict[str, Any]) -> str:
     return f"Microsoft Graph error {status_code}"
 
 
-# CLIENT_ID/TENANT_ID are intentionally excluded: they are identifiers, not secrets.
-_SECRET_ENV_NAMES = ("OUTLOOK_PASSWORD", "OUTLOOK_CLIENT_SECRET")
-
-
 def redact_secrets(message: str) -> str:
     redacted = message
-    for name in _SECRET_ENV_NAMES:
-        value = os.environ.get(name)
-        if value:
-            redacted = redacted.replace(value, "[redacted]")
     for value in sensitive_values():
         redacted = redacted.replace(value, "[redacted]")
     return redacted
@@ -342,48 +230,3 @@ def validate_email(address: str, *, label: str = "address") -> str:
     if not value or not EMAIL_RE.match(value):
         raise ToolValidationError(f"invalid {label}: {address}")
     return value
-
-
-def file_attachment(raw: dict[str, Any], *, html: bool = False) -> Any:
-    """Build an EWS FileAttachment from a raw attachment dict."""
-    import base64
-    from exchangelib import FileAttachment
-    from outlook_mcp.uploads import DEFAULT_UPLOAD_MAX_BYTES, attachment_from_upload
-
-    if raw.get("relative_path"):
-        attachment = attachment_from_upload(raw, html=html)
-        return FileAttachment(
-            name=attachment.name,
-            content=attachment.content,
-            content_type=attachment.content_type,
-            content_id=attachment.content_id,
-            is_inline=attachment.disposition == "inline",
-        )
-
-    name = raw.get("name", "").strip()
-    content_base64 = raw.get("content_base64", "")
-    if not name or not content_base64:
-        raise ToolValidationError("attachments require name and content_base64")
-    try:
-        content = base64.b64decode(content_base64, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise ToolValidationError(f"Invalid base64 attachment content for {name}") from exc
-    if len(content) > DEFAULT_UPLOAD_MAX_BYTES:
-        raise ToolValidationError(
-            f"attachment {name} is {len(content)} bytes, exceeding the "
-            f"{DEFAULT_UPLOAD_MAX_BYTES} bytes per-attachment limit"
-        )
-    return FileAttachment(name=name, content=content)
-
-
-def attach_with_budget(item: Any, raw: dict[str, Any], *, html: bool, total_bytes: int) -> int:
-    """Attach ``raw`` to ``item`` and return the new running total of attachment bytes."""
-    attachment = file_attachment(raw, html=html)
-    total_bytes += len(getattr(attachment, "content", None) or b"")
-    if total_bytes > MAX_ATTACHMENTS_TOTAL_BYTES:
-        raise ToolValidationError(
-            f"attachments total {total_bytes} bytes exceeds the "
-            f"{MAX_ATTACHMENTS_TOTAL_BYTES} bytes per-message limit"
-        )
-    item.attach(attachment)
-    return total_bytes

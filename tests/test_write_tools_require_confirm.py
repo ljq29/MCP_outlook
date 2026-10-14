@@ -6,14 +6,12 @@ import pytest
 
 from outlook_mcp.tools import calendar, contacts, mail, tasks
 
-from conftest import FakeClient
+from conftest import FakeGraphClient
 
 
-class NoTouchClient(FakeClient):
-    def __getattribute__(self, name: str) -> Any:
-        if name in {"get_item", "get_folder"}:
-            raise AssertionError(f"client.{name} must not be called without confirm")
-        return super().__getattribute__(name)
+class NoTouchClient(FakeGraphClient):
+    def _record(self, name: str, kwargs: dict[str, Any]) -> Any:
+        raise AssertionError(f"client.{name} must not be called without confirm")
 
 
 WRITE_CASES = [

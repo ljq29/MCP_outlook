@@ -2,22 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-import exchangelib
-
 from outlook_mcp import server
 from outlook_mcp.credential_store import CredentialStore
 from outlook_mcp.tools.common import AuthRequiredError
 
-from conftest import FakeClient, FakeCreatedItem
-
+from conftest import FakeGraphClient
 
 def test_server_tool_wrappers_delegate_to_tool_modules(monkeypatch) -> None:
-    client = FakeClient()
+    client = FakeGraphClient()
     monkeypatch.setattr(server, "get_client", lambda: client)
-    monkeypatch.setattr(exchangelib, "Message", FakeCreatedItem)
-    monkeypatch.setattr(exchangelib, "CalendarItem", FakeCreatedItem)
-    monkeypatch.setattr(exchangelib, "Contact", FakeCreatedItem)
-    monkeypatch.setattr(exchangelib, "Task", FakeCreatedItem)
 
     assert server.mail_list()["ok"] is True
     assert server.mail_search("report")["ok"] is True
@@ -32,7 +25,7 @@ def test_server_tool_wrappers_delegate_to_tool_modules(monkeypatch) -> None:
     assert server.calendar_list(start=start, end=end)["ok"] is True
     assert server.calendar_create("Meet", start, end, confirm=True)["ok"] is True
     assert server.calendar_create("Meet", start, end, confirm=True, reminder_minutes_before_start=10)["ok"] is True
-    assert FakeCreatedItem.created[-1].reminder_minutes_before_start == 10
+    assert client.last_call("calendar_create")["reminder_minutes_before_start"] == 10
     assert server.calendar_update("cal-1", {"location": "Room 3"}, confirm=True)["ok"] is True
     assert server.calendar_delete("cal-1", confirm=True)["ok"] is True
 
@@ -50,11 +43,8 @@ def test_server_tool_wrappers_delegate_to_tool_modules(monkeypatch) -> None:
 
 def test_new_mcp_tools(monkeypatch) -> None:
     """New tools added after architecture refactoring."""
-    client = FakeClient()
+    client = FakeGraphClient()
     monkeypatch.setattr(server, "get_client", lambda: client)
-    monkeypatch.setattr(exchangelib, "Message", FakeCreatedItem)
-    monkeypatch.setattr(exchangelib, "CalendarItem", FakeCreatedItem)
-    monkeypatch.setattr(exchangelib, "Task", FakeCreatedItem)
 
     # mail
     assert server.mail_forward("mail-1", ["a@example.com"], confirm=True)["ok"] is True
@@ -365,14 +355,6 @@ def test_http_auth_status_does_not_accept_mismatched_msal_account(monkeypatch, t
             server._http_store = None
             server._http_base_config = None
             server._http_clients.clear()
-
-
-def test_http_auth_status_unsupported_method() -> None:
-    from outlook_mcp.server import http_auth_status
-
-    result = http_auth_status("ews", "e@outlook.com", 1, "http://localhost/ews/e@outlook.com/123456")
-    assert result["ok"] is False
-    assert result["error"] == "method_unsupported"
 
 
 def test_http_auth_status_no_credential_id() -> None:

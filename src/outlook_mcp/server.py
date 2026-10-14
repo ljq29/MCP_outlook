@@ -14,7 +14,6 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from .client import create_client
 from .config import GraphConfig, RuntimeConfig, load_config
 from .credential_store import CredentialStore, SQLiteGraphTokenStorage
 from .graph_auth import graph_config_fingerprint
@@ -178,7 +177,7 @@ def get_client() -> Any:
         return _client
     with _client_lock:
         if _client is None:
-            _client = create_client(load_config())
+            _client = GraphClient(load_config())
             atexit.register(_safe_close, _client)
         return _client
 
@@ -186,8 +185,6 @@ def get_client() -> Any:
 def _get_http_client(context: HttpRequestContext) -> Any:
     if context.credential_id is None:
         return _AuthRequiredClient(context)
-    if context.method != "graph":
-        return _UnsupportedMethodClient(f"HTTP MCP method is not implemented yet: {context.method}")
     with _http_lock:
         store = _http_store
         base_config = _http_base_config

@@ -27,7 +27,6 @@ import msal
 import requests
 from requests.adapters import HTTPAdapter
 
-from .client import OutlookClientError
 from .config import GraphConfig
 from .graph_auth import (
     GRAPH_HTTP_TIMEOUT_SECONDS,
@@ -47,6 +46,7 @@ from .tools.common import (
     AuthRequiredError,
     MAX_ATTACHMENTS_TOTAL_BYTES,
     OutcomeUnknownError,
+    OutlookClientError,
     PHONE_LABELS,
     ToolValidationError,
     graph_error_message,

@@ -44,90 +44,6 @@ DEFAULT_GRAPH_SCOPES = (
 
 
 @dataclass(frozen=True)
-class OutlookConfig:
-    email: str
-    auth_mode: str
-    server: str = "outlook.office365.com"
-    access_type: str = "delegate"
-    username: str | None = None
-    password: str | None = None
-    client_id: str | None = None
-    client_secret: str | None = None
-    tenant_id: str | None = None
-    provider: str = "ews"
-
-    @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> "OutlookConfig":
-        source = env or os.environ
-        email = _required(source, "OUTLOOK_EMAIL")
-        auth_mode = _required(source, "OUTLOOK_AUTH_MODE").lower()
-        server = source.get("OUTLOOK_SERVER", "outlook.office365.com").strip() or "outlook.office365.com"
-        access_type = source.get("OUTLOOK_ACCESS_TYPE", "delegate").strip().lower() or "delegate"
-
-        if auth_mode not in {"oauth2", "password"}:
-            raise ConfigError("OUTLOOK_AUTH_MODE must be either 'oauth2' or 'password'")
-        if access_type not in {"delegate", "impersonation"}:
-            raise ConfigError("OUTLOOK_ACCESS_TYPE must be either 'delegate' or 'impersonation'")
-
-        config = cls(
-            provider="ews",
-            email=email,
-            auth_mode=auth_mode,
-            server=server,
-            access_type=access_type,
-            username=_optional(source, "OUTLOOK_USERNAME"),
-            password=_optional(source, "OUTLOOK_PASSWORD"),
-            client_id=_optional(source, "OUTLOOK_CLIENT_ID"),
-            client_secret=_optional(source, "OUTLOOK_CLIENT_SECRET"),
-            tenant_id=_optional(source, "OUTLOOK_TENANT_ID"),
-        )
-        config.validate()
-        return config
-
-    def validate(self) -> None:
-        if self.auth_mode == "oauth2":
-            missing = [
-                name
-                for name, value in {
-                    "OUTLOOK_CLIENT_ID": self.client_id,
-                    "OUTLOOK_CLIENT_SECRET": self.client_secret,
-                    "OUTLOOK_TENANT_ID": self.tenant_id,
-                }.items()
-                if not value
-            ]
-        else:
-            missing = [
-                name
-                for name, value in {
-                    "OUTLOOK_USERNAME": self.username,
-                    "OUTLOOK_PASSWORD": self.password,
-                }.items()
-                if not value
-            ]
-        if missing:
-            raise ConfigError(f"Missing required environment variable(s): {', '.join(missing)}")
-        if not EMAIL_RE.match(self.email):
-            raise ConfigError(f"invalid email: {self.email}")
-        register_sensitive_value(self.password)
-        register_sensitive_value(self.client_secret)
-
-    @property
-    def redacted(self) -> dict[str, str | None]:
-        return {
-            "provider": self.provider,
-            "email": self.email,
-            "auth_mode": self.auth_mode,
-            "server": self.server,
-            "access_type": self.access_type,
-            "username": self.username,
-            "password": "[redacted]" if self.password else None,
-            "client_id": self.client_id,
-            "client_secret": "[redacted]" if self.client_secret else None,
-            "tenant_id": self.tenant_id,
-        }
-
-
-@dataclass(frozen=True)
 class GraphConfig:
     email: str
     client_id: str
@@ -193,7 +109,7 @@ class GraphConfig:
         }
 
 
-RuntimeConfig = OutlookConfig | GraphConfig
+RuntimeConfig = GraphConfig
 
 
 def load_config(env: Mapping[str, str] | None = None, config_path: str | Path | None = None) -> RuntimeConfig:
@@ -201,14 +117,12 @@ def load_config(env: Mapping[str, str] | None = None, config_path: str | Path | 
     candidate = _config_path(source, config_path)
     if candidate is not None:
         return load_config_file(candidate, env=source)
-    try:
-        return OutlookConfig.from_env(source)
-    except ConfigError as exc:
-        searched = Path.cwd() / "outlook-mcp.json"
-        raise ConfigError(
-            f"{exc} Searched for outlook-mcp.json in: {searched}; "
-            "set OUTLOOK_CONFIG_FILE or provide env vars"
-        ) from exc
+    searched = Path.cwd() / "outlook-mcp.json"
+    raise ConfigError(
+        f"No config file found. Searched for outlook-mcp.json in: {searched}; "
+        "set OUTLOOK_CONFIG_FILE or create outlook-mcp.json from outlook-mcp.example.json "
+        'with provider "graph"'
+    )
 
 
 def load_config_file(path: str | Path, env: Mapping[str, str] | None = None) -> RuntimeConfig:
@@ -225,8 +139,8 @@ def load_config_file(path: str | Path, env: Mapping[str, str] | None = None) -> 
     if provider == "graph":
         return GraphConfig.from_json(payload, env=env)
     if provider == "ews":
-        return _ews_from_json(payload)
-    raise ConfigError("provider must be either 'graph' or 'ews'")
+        raise ConfigError("EWS support was removed; use provider=graph or pin an older version")
+    raise ConfigError("provider must be 'graph'")
 
 
 def _config_path(env: Mapping[str, str], explicit: str | Path | None) -> Path | None:
@@ -237,29 +151,6 @@ def _config_path(env: Mapping[str, str], explicit: str | Path | None) -> Path | 
         return Path(env_path)
     default_path = Path.cwd() / "outlook-mcp.json"
     return default_path if default_path.exists() else None
-
-
-def _ews_from_json(payload: Mapping[str, object]) -> OutlookConfig:
-    ews = _section(payload, "ews")
-    auth_mode = _required_json(ews, "auth_mode").lower()
-    config = OutlookConfig(
-        provider="ews",
-        email=_required_json(payload, "email"),
-        auth_mode=auth_mode,
-        server=str(ews.get("server", "outlook.office365.com")).strip() or "outlook.office365.com",
-        access_type=str(ews.get("access_type", "delegate")).strip().lower() or "delegate",
-        username=_optional_json(ews, "username"),
-        password=_optional_json(ews, "password"),
-        client_id=_optional_json(ews, "client_id"),
-        client_secret=_optional_json(ews, "client_secret"),
-        tenant_id=_optional_json(ews, "tenant_id"),
-    )
-    if auth_mode not in {"oauth2", "password"}:
-        raise ConfigError("ews.auth_mode must be either 'oauth2' or 'password'")
-    if config.access_type not in {"delegate", "impersonation"}:
-        raise ConfigError("ews.access_type must be either 'delegate' or 'impersonation'")
-    config.validate()
-    return config
 
 
 def _section(payload: Mapping[str, object], name: str) -> Mapping[str, object]:
@@ -283,15 +174,3 @@ def _optional_json(payload: Mapping[str, object], name: str) -> str | None:
     if not isinstance(value, str):
         raise ConfigError(f"{name} must be a string")
     return value.strip() or None
-
-
-def _required(env: Mapping[str, str], name: str) -> str:
-    value = env.get(name, "").strip()
-    if not value:
-        raise ConfigError(f"Missing required environment variable: {name}")
-    return value
-
-
-def _optional(env: Mapping[str, str], name: str) -> str | None:
-    value = env.get(name, "").strip()
-    return value or None

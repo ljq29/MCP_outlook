@@ -50,7 +50,7 @@ from .uploads import (
 
 
 HTTP_METHODS = {"GET", "POST", "DELETE"}
-ENDPOINT_METHODS = {"graph", "ews"}
+ENDPOINT_METHODS = {"graph"}
 DEFAULT_EXAMPLE_TOKEN = "example-token-not-registered"
 DEFAULT_EXAMPLE_PATH = "/graph/you@outlook.com"
 DEFAULT_EXAMPLE_AUTH_PATH = f"{DEFAULT_EXAMPLE_PATH}/{DEFAULT_EXAMPLE_TOKEN}"
