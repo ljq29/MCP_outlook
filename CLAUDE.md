@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-uv run pytest                    # Run all tests (~430 tests)
+uv run pytest                    # Run all tests (~470 tests)
 uv run pytest tests/test_file.py # Run a single test file
 uv run pytest -k "test_name"     # Run tests matching keyword
 uv run ruff check src/           # Lint
@@ -19,24 +19,22 @@ The repository has a staged `uv.lock` — do not regenerate it unless the user a
 
 ## Architecture
 
-This is an MCP (Model Context Protocol) server that lets AI agents operate Outlook mail/calendar/contacts/tasks through high-level tools. The agent calls MCP tools (`mail_send`, `calendar_create`, etc.) — it never knows or cares whether the backend is EWS or Microsoft Graph.
+This is an MCP (Model Context Protocol) server that lets AI agents operate Outlook mail/calendar/contacts/tasks through high-level tools. The agent calls MCP tools (`mail_send`, `calendar_create`, etc.) — it never needs to know the wire details; the backend is always Microsoft Graph (EWS support was removed).
 
 ### Two entry points
 
-- **`server.py`** — stdio MCP mode, using `FastMCP`. Used for local MCP clients (Claude Desktop, VS Code). Direct EWS or Graph via config file.
-- **`http_server.py`** — Streamable HTTP MCP mode (Starlette + uvicorn). Used for Docker/Traefik deployments. **Graph-only** in HTTP mode (`ews` returns `method_unsupported`).
+- **`server.py`** — stdio MCP mode, using `FastMCP`. Used for local MCP clients (Claude Desktop, VS Code). Direct Graph via config file.
+- **`http_server.py`** — Streamable HTTP MCP mode (Starlette + uvicorn). Used for Docker/Traefik deployments. **Graph-only**, single-user: on startup it auto-provisions one credential from the config `email` plus `OUTLOOK_MCP_BEARER_TOKEN` (a random token is generated and the setup URL logged when unset).
 
-### Two backends
+### Backend
 
-Every tool (`mail_send`, `calendar_create`, etc.) checks `hasattr(client, "graph_method")` to dispatch:
-- **EWS** (`client.py`): Uses `exchangelib` (Message, CalendarItem, Task, Contact)
-- **Graph** (`graph_client.py`): Uses `requests.Session` + Microsoft Graph REST API
+**Graph only** (`graph_client.py`): Uses `requests.Session` + Microsoft Graph REST API. Tools call Graph methods on the client directly; there is no backend dispatch.
 
 The Graph path handles calendar invites differently: with attendees → constructs MIME message with ICS attachment and sends via `/me/sendMail` (because Outlook.com personal accounts would normalize external addresses). Without attendees → straightforward REST `/me/events`.
 
 ### HTTP auth flow (important)
 
-HTTP endpoints follow `/{method}/{account}/{secret}`. The endpoint must be registered explicitly first (`uv run python -m outlook_mcp.credential_store register ...`); a browser GET with an unknown token returns `credential_not_registered` and never writes to SQLite. Opening a registered URL shows a Microsoft device-code OAuth page. The MCP client uses the same URL; credentials live in `credential_store.py` (SQLite). MSAL token cache and pending device flows are stored in SQLite, not files.
+HTTP endpoints follow `/{method}/{account}/{secret}`. On startup the server auto-provisions a single credential: account = config `email`, secret = `OUTLOOK_MCP_BEARER_TOKEN` (a random token is generated and the setup URL logged when unset). A browser GET with an unknown token returns `credential_not_registered` and never writes to SQLite. The `credential_store` register/rotate CLI remains as an ops-recovery tool only. Opening a provisioned URL shows a Microsoft device-code OAuth page. The MCP client uses the same URL; credentials live in `credential_store.py` (SQLite). MSAL token cache and pending device flows are stored in SQLite, not files.
 
 ### Key patterns
 
@@ -44,7 +42,7 @@ HTTP endpoints follow `/{method}/{account}/{secret}`. The endpoint must be regis
 - **`credential_store.py`**: `_connect()` is a `@contextmanager` that creates a **new** SQLite connection per call, runs PRAGMAs, commits on success, rolls back on exception, and closes in `finally`. All DB access goes through it. No shared/global connection — each call gets its own connection so concurrent requests are safe.
 - **`server.py` globals**: `_http_clients` (OrderedDict LRU cache of GraphClient instances), `_http_store`, `_http_base_config` are module-level and protected by `_http_lock` (threading.Lock). `_client` is protected by `_client_lock`.
 - **All write tools require `confirm=True`** to prevent accidental mutations by LLMs.
-- **Alias registry** (`tools/alias_registry.py`): Long EWS/Graph item IDs are mapped to short deterministic aliases (`cal:a3f29b`) so LLMs don't truncate them across tool calls.
+- **Alias registry** (`tools/alias_registry.py`): Long Graph item IDs are mapped to short deterministic aliases (`cal:a3f29b`) so LLMs don't truncate them across tool calls.
 
 ### SQLite schema
 
@@ -67,7 +65,7 @@ Only draft submission obtains a `GraphClient`. Drafts remain an HTTP WebUI conce
 | Variable | Default | Notes |
 |---|---|---|
 | `OUTLOOK_CONFIG_FILE` | — | Path to config JSON (required at runtime) |
-| `OUTLOOK_MCP_DB` | `~/.outlook-mcp/outlook-mcp.sqlite3` | SQLite database path; Docker sets `/data/outlook-mcp.sqlite3` |
+| `OUTLOOK_MCP_DB` | `~/.outlook-mcp/outlook-mcp.sqlite3` | Local state store (credentials, msal cache, calendar drafts, operation logs, uploads); Docker sets `/data/outlook-mcp.sqlite3` |
 | `OUTLOOK_MCP_HTTP_HOST` | `127.0.0.1` | Bind host for HTTP server; Docker sets `0.0.0.0` |
 | `OUTLOOK_MCP_HTTP_PORT` | `8000` | Bind port for HTTP server |
 | `OUTLOOK_MCP_TRUST_PROXY_HEADERS` | — | Trust X-Forwarded-* from proxies allowed by `FORWARDED_ALLOW_IPS` (default `127.0.0.1`) |
@@ -78,7 +76,7 @@ Only draft submission obtains a `GraphClient`. Drafts remain an HTTP WebUI conce
 | `OUTLOOK_MCP_UPLOAD_TTL_SECONDS` | `86400` | Upload TTL (24 hours) |
 | `OUTLOOK_MCP_UPLOAD_QUOTA_BYTES` | `31457280` | Per-credential upload quota (30 MiB) |
 | `OUTLOOK_MCP_UPLOAD_QUOTA_FILES` | `100` | Per-credential upload file count quota |
-| `OUTLOOK_MCP_ACCOUNT` / `OUTLOOK_MCP_BEARER_TOKEN` | — | Required by the debug launcher scripts (`start_outlook_mcp_http.sh` / `.bat`) |
+| `OUTLOOK_MCP_ACCOUNT` / `OUTLOOK_MCP_BEARER_TOKEN` | — | Required by the debug launcher scripts (`start_outlook_mcp_http.sh` / `.bat`); the server also uses `OUTLOOK_MCP_BEARER_TOKEN` for startup auto-provisioning |
 
 ### Deployment
 

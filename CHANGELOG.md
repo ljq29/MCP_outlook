@@ -2,6 +2,19 @@
 
 > 说明：`0.1.7` 到 `0.1.46` 为根据 git 历史补录（仓库没有 tag，按 `发布: 0.1.x 版本` 提交划分版本边界，日期取发布提交日期）。每条只写 commit 内容能支撑的要点，粒度较粗。
 
+## 0.2.0 - 2026-10-14
+
+Breaking changes：
+
+- **移除 EWS（exchangelib）后端**，项目现在是 Graph-only。`provider: "ews"` 配置、EWS 相关环境变量（`OUTLOOK_EMAIL`、`OUTLOOK_AUTH_MODE`、`OUTLOOK_SERVER`、`OUTLOOK_ACCESS_TYPE`、`OUTLOOK_CLIENT_*`、`OUTLOOK_USERNAME` / `OUTLOOK_PASSWORD`）和 `client.py` 全部删除。迁移指引：仍在使用 EWS（Exchange on-prem / 企业租户走 exchangelib）的用户请停留在 `0.1.48`，不要升级。
+- **HTTP 模式改为单用户自托管自动 provisioning**：server 启动时自动创建单个 credential，account 取 `outlook-mcp.json` 的 `email`，token 取 `OUTLOOK_MCP_BEARER_TOKEN`；未设置时用 `secrets.token_urlsafe(24)` 生成随机 token 并在启动日志打印 setup URL（`http://{OUTLOOK_MCP_HTTP_HOST}:{OUTLOOK_MCP_HTTP_PORT}/graph/{email}/{token}`）。不再需要手工执行 `credential_store register`；register/rotate CLI 降级为运维恢复工具。非 base config `email` 的 credential 按未注册处理（404 页面 / 403 `auth_required`）。
+- Bearer token 移除最小长度限制（`0.1.47` 曾默认要求 `16 characters`）；字符集仍为 `A-Za-z0-9._~-`，公网部署仍应使用高熵 token。
+
+其他：
+
+- `OUTLOOK_MCP_DB` 语义明确为本地状态库（msal cache、日历草稿、操作日志、上传元数据），不再是多账号凭据库。
+- `start_outlook_mcp_http.sh` / `.bat` 删除显式 register 步骤，只设环境变量并启动。
+
 ## 0.1.48 - 2026-09-09
 
 修复与健壮性（来自一次全项目体检，commit a715ec6）：

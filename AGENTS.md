@@ -14,7 +14,7 @@
 
 ## 2. 本项目不可忘记的约束
 
-> **Pre-check**：本项目是 Outlook MCP。Agent 只应看到 `mail_*`、`calendar_*`、`contacts_*`、`task_*` 和 `account_info` 这类高层 MCP 工具；EWS、Graph、MIME/ICS 是后端实现细节，默认不要暴露成新的 MCP 工具。
+> **Pre-check**：本项目是 Outlook MCP，Graph-only（EWS/exchangelib 后端已移除，不要重新引入）。Agent 只应看到 `mail_*`、`calendar_*`、`contacts_*`、`task_*` 和 `account_info` 这类高层 MCP 工具；Graph、MIME/ICS 是后端实现细节，默认不要暴露成新的 MCP 工具。
 
 长期有效约束：
 
@@ -30,7 +30,8 @@
 - 不启动无限期 auth polling 进程；授权用 `authorize_outlook.bat` 或 MCP 返回的 `auth_required` device code 流程。
 - Graph 个人账号创建带外部邀请人的 `/me/events` 可能把 attendee 归一化成当前账号。Graph 后端只要检测到 `required_attendees` 或 `optional_attendees` 非空，就应走 `sendMail + MIME/ICS`，不要用普通 `/me/events` 创建会议邀请。
 - 没有邀请人的普通日程仍走普通 calendar event 创建。
-- EWS 账号下会议邀请由 `exchangelib CalendarItem.save(send_meeting_invitations=...)` 处理，不需要 MIME/ICS fallback。
+- HTTP 模式（`http_server.py`）是单用户自托管：server 启动时自动 provisioning 单个 credential，account 取配置文件的 `email`，token 取 `OUTLOOK_MCP_BEARER_TOKEN`（未设置时用 `secrets.token_urlsafe(24)` 生成并在启动日志打印 setup URL）。不要恢复"手工 register 才能用"的流程；`credential_store` 的 register/rotate CLI 只是运维恢复工具。
+- `OUTLOOK_MCP_DB` 指向的 SQLite 是本地状态库（HTTP credential、msal cache、日历草稿、操作日志、上传元数据），不是多账号凭据库；非 base config `email` 的 credential 按未注册处理。
 
 ## 3. 判断任务类型：先诊断，再执行
 

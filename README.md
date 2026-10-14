@@ -2,7 +2,7 @@
 
 这是一个 Python MCP server，用于让 AI Agent 通过高层工具操作 Outlook 邮箱、日历、联系人和任务。
 
-Agent 只调用 MCP 暴露的业务操作，例如 `mail_send`、`calendar_create`。底层到底走 EWS、Graph、普通 event，还是 MIME/ICS，由本项目脚本根据配置和参数自动处理，不需要 Agent 知道底层细节。
+Agent 只调用 MCP 暴露的业务操作，例如 `mail_send`、`calendar_create`。底层统一走 Microsoft Graph；普通 event 还是 MIME/ICS 会议邀请，由本项目脚本根据参数自动处理，不需要 Agent 知道底层细节。
 
 ## 快速开始
 
@@ -21,10 +21,6 @@ export OUTLOOK_MCP_CSRF_KEY="$(openssl rand -hex 32)"
 export OUTLOOK_MCP_ACCOUNT="you@outlook.com"
 export OUTLOOK_MCP_BEARER_TOKEN="$(openssl rand -hex 32)"
 docker compose -f docker-compose.demo.yml up -d
-docker compose -f docker-compose.demo.yml exec outlookmcp \
-  uv run python -m outlook_mcp.credential_store register \
-  graph "$OUTLOOK_MCP_ACCOUNT" "$OUTLOOK_MCP_BEARER_TOKEN" \
-  --db /data/outlook-mcp.sqlite3
 ```
 
 > **权限提示**：容器以 UID 1000 运行，`/data` 挂载目录及其中的 SQLite 文件必须对 UID 1000 可读写。如果启动时报 `attempt to write a readonly database`，说明已有文件权限不对，执行：
@@ -38,16 +34,16 @@ docker compose -f docker-compose.demo.yml exec outlookmcp \
 
 `tenant` 默认 `consumers` 适合个人 Microsoft 账户。上面的命令块已在 `up -d` 前提示编辑配置，不要带着默认占位邮箱启动容器。
 
-HTTP credential 必须先显式注册；浏览器 GET 不会创建 credential。上面的命令完成后，用下面的命令打印授权 URL：
+HTTP server 启动时会自动 provisioning 单个 credential：account 取 `outlook-mcp.json` 里的 `email`，token 取 `OUTLOOK_MCP_BEARER_TOKEN`；未设置 token 时会自动生成随机 token 并打印到启动日志。浏览器 GET 本身不会创建 credential。容器启动后，用下面的命令打印授权 URL：
 
 ```bash
 printf 'https://outlook-mcp.example.com/graph/%s/%s\n' \
   "$OUTLOOK_MCP_ACCOUNT" "$OUTLOOK_MCP_BEARER_TOKEN"
 ```
 
-首次打开已注册的 URL 会显示 Microsoft device code 授权信息。授权完成后，MCP 客户端使用 `https://outlook-mcp.example.com/graph/you@outlook.com`，并配置同一个 `Authorization: Bearer ...` token。token 只允许字母、数字、`.`、`_`、`~`、`-`，不限制长度；公网部署仍应使用高熵 token。操作日志 URL 是授权 URL 后追加 `/log`。
+首次打开该 URL 会显示 Microsoft device code 授权信息。授权完成后，MCP 客户端使用 `https://outlook-mcp.example.com/graph/you@outlook.com`，并配置同一个 `Authorization: Bearer ...` token。token 只允许字母、数字、`.`、`_`、`~`、`-`，不限制长度；公网部署仍应使用高熵 token。操作日志 URL 是授权 URL 后追加 `/log`。
 
-需要换 token 时使用 `credential_store rotate`，它会原地更新 credential，保留该 credential 的 OAuth、日志和上传隔离状态；不要重新 `register` 后误留旧 token。
+需要换 token 时使用运维恢复命令 `uv run python -m outlook_mcp.credential_store rotate`（Docker 下加 `--db /data/outlook-mcp.sqlite3`），它会原地更新 credential，保留该 credential 的 OAuth、日志和上传隔离状态；换 token 后注意旧 token 不要再出现在客户端配置里。
 
 本地开发可以直接用：
 
@@ -67,7 +63,6 @@ uv run outlook-mcp
 - [HTTP MCP 模式](#http-mcp-模式)
 - [Docker demo](#docker-demo)
 - [Graph 个人 Outlook.com 配置](#graph-个人-outlookcom-配置)
-- [EWS 配置](#ews-配置)
 - [故障排查](#故障排查)
 - [AI Agent 使用约定](#ai-agent-使用约定)
 
@@ -80,7 +75,7 @@ uv run outlook-mcp
 - 联系人：列表、搜索、读取、创建、更新、删除
 - 任务：列表、读取、搜索、创建、更新、删除
 - 账号信息：读取当前账号邮箱和显示名
-- 账号绑定：支持 EWS 和 Microsoft Graph
+- 账号绑定：Microsoft Graph（个人 Outlook.com 账号）
 - MCP 传输：`stdio`、Streamable HTTP
 
 所有写操作都需要 `confirm=true`，避免 Agent 误发邮件或误改数据。
@@ -98,60 +93,31 @@ Outlook MCP
   |
   +-- mail_send
   |     |
-  |     +-- EWS 账号
-  |     |     |
-  |     |     +-- exchangelib Message.send_and_save()
-  |     |         通过 Exchange/EWS 发普通邮件
-  |     |
-  |     +-- Graph 账号
-  |           |
-  |           +-- Microsoft Graph /me/sendMail
-  |               通过 Graph 发普通邮件
+  |     +-- Microsoft Graph /me/sendMail
+  |         通过 Graph 发普通邮件
   |
   +-- calendar_create
         |
         +-- 没有邀请人
         |     |
-        |     +-- EWS 账号
-        |     |     |
-        |     |     +-- exchangelib CalendarItem.save()
-        |     |         创建普通日程
-        |     |
-        |     +-- Graph 账号
-        |           |
-        |           +-- Microsoft Graph /me/events
-        |               创建普通日程
+        |     +-- Microsoft Graph /me/events
+        |         创建普通日程
         |
         +-- 有邀请人
               |
-              +-- EWS 账号
-              |     |
-              |     +-- exchangelib CalendarItem.save(
-              |           send_meeting_invitations=SEND_TO_ALL_AND_SAVE_COPY
-              |         )
-              |         通过 EWS 创建会议并发送邀请
-              |
-              +-- Graph 账号
-                    |
-                    +-- Microsoft Graph /me/sendMail
-                        Content = MIME 邮件 + ICS 日历邀请
-                        通过邮件形式发送会议邀请
+              +-- Microsoft Graph /me/sendMail
+                      Content = MIME 邮件 + ICS 日历邀请
+                      通过邮件形式发送会议邀请
 ```
 
 简化理解：
 
 ```text
-绑定账号方式
+Graph 账号（个人 Outlook.com）
   |
-  +-- EWS
-  |     +-- 发邮件：EWS Message
-  |     +-- 普通日程：EWS CalendarItem
-  |     +-- 会议邀请：EWS CalendarItem + send_meeting_invitations
-  |
-  +-- Graph
-        +-- 发邮件：Graph sendMail
-        +-- 普通日程：Graph /me/events
-        +-- 会议邀请：Graph sendMail + MIME/ICS
+  +-- 发邮件：Graph sendMail
+  +-- 普通日程：Graph /me/events
+  +-- 会议邀请：Graph sendMail + MIME/ICS
 ```
 
 ## 可用 MCP 工具
@@ -234,7 +200,7 @@ uv run outlook-mcp
 uv run outlook-mcp-http
 ```
 
-调试时也可以用根目录启动器。启动前必须显式设置 `OUTLOOK_MCP_ACCOUNT` 和 `OUTLOOK_MCP_BEARER_TOKEN`。启动器会注册该 credential，打印完整 MCP JSON，等你复制后按回车，再在当前窗口启动 HTTP 服务：
+调试时也可以用根目录启动器。启动前必须显式设置 `OUTLOOK_MCP_ACCOUNT` 和 `OUTLOOK_MCP_BEARER_TOKEN`。启动器会打印完整 MCP JSON，等你复制后按回车，再在当前窗口启动 HTTP 服务；server 启动时会用 `OUTLOOK_MCP_BEARER_TOKEN` 自动 provisioning 对应的 credential：
 
 ```powershell
 $env:OUTLOOK_MCP_ACCOUNT = "you@outlook.com"
@@ -292,7 +258,7 @@ Windows 路径需要使用转义后的反斜杠，例如 `C:\\path\\to\\OutlookM
 
 如果你的 MCP 客户端不读取项目级 `.mcp.json`，把上面的 `outlook` server 配置复制到客户端自己的 MCP 配置文件中。
 
-HTTP MCP 的客户端配置由 WebUI 自动生成。先用 `python -m outlook_mcp.credential_store register` 显式注册 credential，再启动 `uv run outlook-mcp-http` 或 Docker 服务，最后用浏览器打开 `/{method}/{account}/{token}` 完成授权。未知 token 的 GET 只返回 `credential_not_registered`，不会写 SQLite。copy panel 给 MCP 客户端的仍是 `/{method}/{account}` + `Authorization: Bearer ...`。
+HTTP MCP 的客户端配置由 WebUI 自动生成。启动 `uv run outlook-mcp-http` 或 Docker 服务时会自动 provisioning credential（account 取配置文件的 `email`，token 取 `OUTLOOK_MCP_BEARER_TOKEN`，未设置时自动生成并打印到启动日志），然后用浏览器打开 `/{method}/{account}/{token}` 完成授权。未知 token 的 GET 只返回 `credential_not_registered`，不会写 SQLite。copy panel 给 MCP 客户端的仍是 `/{method}/{account}` + `Authorization: Bearer ...`。
 
 ## HTTP MCP 模式
 
@@ -343,12 +309,12 @@ Authorization: Bearer {token}
 
 首次使用时：
 
-- 先执行 `uv run python -m outlook_mcp.credential_store register graph you@outlook.com replace-with-random-token-32-chars`。token 只允许字母、数字、`.`、`_`、`~`、`-`，不限制长度；公网部署仍应使用高熵 token。不带 `--db` 时默认写入 `~/.outlook-mcp/outlook-mcp.sqlite3`；如果 server 启动时设置了自定义 `OUTLOOK_MCP_DB`，register 必须加 `--db` 指向同一个文件。
-- MCP 客户端调用 `/{method}/{account}`，必须带 `Authorization: Bearer {token}`；如果 SQLite 里没有这个组合，会返回 `auth_required`，且不会自动创建。
-- 用户手工打开已注册的 `/{method}/{account}/{token}`，页面才会展示 Microsoft device code 授权信息。
+- HTTP server 启动时会自动 provisioning 单个 credential：account 取 `outlook-mcp.json` 的 `email`，token 取 `OUTLOOK_MCP_BEARER_TOKEN`。token 只允许字母、数字、`.`、`_`、`~`、`-`，不限制长度；公网部署仍应使用高熵 token。未设置 `OUTLOOK_MCP_BEARER_TOKEN` 时会生成随机 token，并在启动日志打印形如 `http://{host}:{port}/graph/{email}/{token}` 的 setup URL。
+- MCP 客户端调用 `/{method}/{account}`，必须带 `Authorization: Bearer {token}`；token 不匹配时返回 `auth_required`。
+- 用户手工打开 `/{method}/{account}/{token}`，页面才会展示 Microsoft device code 授权信息。
 - 用户完成 Microsoft 登录后刷新页面；授权成功后，MCP 客户端继续使用无 token URL + Bearer header。
 
-轮换 token 使用 `uv run python -m outlook_mcp.credential_store rotate graph you@outlook.com old-token-1234 new-token-5678`。旧 token 立即失效，credential ID 与已绑定 OAuth 保持不变。
+`credential_store` 的 register/rotate CLI 只是运维恢复工具，正常启动不再需要手工 register。轮换 token 使用 `uv run python -m outlook_mcp.credential_store rotate graph you@outlook.com old-token-1234 new-token-5678`。旧 token 立即失效，credential ID 与已绑定 OAuth 保持不变。
 
 WebUI 默认选中 `Full`，不会写 `X-Outlook-MCP-Mode` 或 `X-Outlook-MCP-Tools`，因此暴露全部高层工具。切到 `Calendar`、`Mail` 等 mode 时，页面会自动写入对应的 `X-Outlook-MCP-Mode`；只有 `Custom` 会展示工具输入框并写入 `X-Outlook-MCP-Tools`。从 `Full` 切到 `Custom` 会默认填入全部工具，从单一 mode 切到 `Custom` 会默认填入该 mode 的工具，便于删减或微调。
 
@@ -431,7 +397,7 @@ HTTP 模式默认 SQLite 文件：
 ~/.outlook-mcp/outlook-mcp.sqlite3
 ```
 
-可以用 `OUTLOOK_MCP_DB` 改位置。HTTP 模式下 Graph 的 MSAL token cache 和 pending device flow 都存 SQLite；`outlook-mcp.json` 里的 `graph.client_id`、`tenant`、`scopes` 仍然作为 Graph 基础配置使用。v1 预留了 `method` 路由框架，但当前只跑通 `graph`，`ews` 会返回 `method_unsupported`。
+可以用 `OUTLOOK_MCP_DB` 改位置。这个 SQLite 是本地状态库：HTTP credential、Graph 的 MSAL token cache、pending device flow、日历草稿、操作日志和上传元数据都存在这里；`outlook-mcp.json` 里的 `graph.client_id`、`tenant`、`scopes` 仍然作为 Graph 基础配置使用。
 
 ## Docker demo
 
@@ -469,10 +435,6 @@ export OUTLOOK_MCP_ACCOUNT="you@outlook.com"
 export OUTLOOK_MCP_BEARER_TOKEN="$(openssl rand -hex 32)"
 
 docker compose -f docker-compose.demo.yml up -d
-docker compose -f docker-compose.demo.yml exec outlookmcp \
-  uv run python -m outlook_mcp.credential_store register \
-  graph "$OUTLOOK_MCP_ACCOUNT" "$OUTLOOK_MCP_BEARER_TOKEN" \
-  --db /data/outlook-mcp.sqlite3
 docker compose -f docker-compose.demo.yml ps
 docker compose -f docker-compose.demo.yml logs -f
 ```
@@ -498,7 +460,7 @@ curl -sk "https://outlook-mcp.example.com/graph/$OUTLOOK_MCP_ACCOUNT/$OUTLOOK_MC
 
 这个命令没有输出就是预期结果。
 
-注册后打印浏览器授权 URL：
+启动后打印浏览器授权 URL：
 
 ```bash
 printf 'https://outlook-mcp.example.com/graph/%s/%s\n' \
@@ -533,16 +495,13 @@ docker run -d \
   -e OUTLOOK_MCP_CSRF_KEY="$OUTLOOK_MCP_CSRF_KEY" \
   -e OUTLOOK_CONFIG_FILE=/config/outlook-mcp.json \
   -e OUTLOOK_MCP_DB=/data/outlook-mcp.sqlite3 \
+  -e OUTLOOK_MCP_BEARER_TOKEN="$OUTLOOK_MCP_BEARER_TOKEN" \
   -v "$(pwd)/outlook-mcp.json:/config/outlook-mcp.json:ro" \
   -v outlookmcp-data:/data \
   outlook-mcp:0.1.48
-
-docker exec outlook-mcp uv run python -m outlook_mcp.credential_store register \
-  graph "$OUTLOOK_MCP_ACCOUNT" "$OUTLOOK_MCP_BEARER_TOKEN" \
-  --db /data/outlook-mcp.sqlite3
 ```
 
-显式注册后访问对应的 `/{method}/{account}/{token}` 授权 URL。未知 token 不会因浏览器 GET 自动写入数据库：
+启动后访问对应的 `/{method}/{account}/{token}` 授权 URL。未知 token 不会因浏览器 GET 自动写入数据库：
 
 ```bash
 printf 'http://127.0.0.1:8000/graph/%s/%s\n' \
@@ -586,7 +545,7 @@ Compose 会把配置文件和数据库持久化：
 - 服务加入外部 Docker network `traefik`，默认域名是 `outlook-mcp.example.com`
 - 页面提示的 MCP URL 会在浏览器端按当前 `window.location.origin` 重写；`OUTLOOK_MCP_TRUST_PROXY_HEADERS=1` 会信任 Traefik 注入的 `Forwarded` / `X-Forwarded-*`
 
-Docker 模式不会预注册 credential。必须先在持久化的 `/data/outlook-mcp.sqlite3` 中执行 `credential_store register`，再打开 `/graph/{account}/{token}` 获取 Microsoft device code；MCP 客户端后续使用 `/graph/{account}` + `Authorization: Bearer {token}`。升级或重启不会清除已注册 credential。
+Docker 模式下 server 启动时会自动 provisioning credential：account 取 `/config/outlook-mcp.json` 的 `email`，token 取 `OUTLOOK_MCP_BEARER_TOKEN`，未设置时生成随机 token 并打印到容器日志。随后打开 `/graph/{account}/{token}` 获取 Microsoft device code；MCP 客户端后续使用 `/graph/{account}` + `Authorization: Bearer {token}`。credential 存储在持久化的 `/data/outlook-mcp.sqlite3` 中，升级或重启不会清除。
 
 ## Graph 个人 Outlook.com 配置
 
@@ -646,27 +605,6 @@ uv run python -m outlook_mcp.auth_setup --debug \
 
 授权日志会写入 `logs/`，token 会写入 `token_cache_path`。`outlook-mcp.json` 和 token cache 都不要提交到 Git。
 
-## EWS 配置
-
-Microsoft 365 / Exchange 邮箱可以使用 EWS。
-
-```json
-{
-  "provider": "ews",
-  "email": "user@example.com",
-  "ews": {
-    "auth_mode": "oauth2",
-    "client_id": "...",
-    "client_secret": "...",
-    "tenant_id": "...",
-    "server": "outlook.office365.com",
-    "access_type": "delegate"
-  }
-}
-```
-
-也支持旧的环境变量方式，见 `.env.example`。注意 `.env` 不会被自动加载，它只是环境变量清单，需要通过 systemd `Environment=`、Docker `env_file` 或 shell `export` 等方式注入。
-
 ## 故障排查
 
 `docker build` 拉取基础镜像失败：当前 `Dockerfile` 默认使用 `docker.m.daocloud.io/library/python:3.12-slim`。如果仍失败，先确认 Docker Desktop 能访问该镜像源，再执行 `docker pull docker.m.daocloud.io/library/python:3.12-slim`；需要用官方源覆盖时执行 `docker build --build-arg BASE_IMAGE=python:3.12-slim .`。
@@ -687,7 +625,7 @@ MCP 客户端报 `streamableHttp connect failed: fetch failed; sse connect faile
 
 ## AI Agent 使用约定
 
-- Agent 只需要调用 MCP 工具，不要绕过 MCP 直接调用 Graph 或 EWS。
+- Agent 只需要调用 MCP 工具，不要绕过 MCP 直接调用 Graph API。
 - 写操作必须传 `confirm=true`。
 - `calendar_create` 创建普通日程或会议都用同一个入口。
 - 日历时间推荐传本地墙上时间加 `timezone`，例如 `start="2026-03-16T20:00:00"`、`timezone="Asia/Shanghai"` 表示北京时间晚上 8 点。
