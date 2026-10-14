@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 from typing import Any
 from urllib.parse import quote
@@ -18,8 +17,6 @@ DEFAULT_SERVER_NAME = "outlook-http"
 TOOL_MODES = {"full", "mail", "calendar", "contacts", "tasks", "custom"}
 SECRET_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+$")
 INVALID_SECRET_MESSAGE = "secret may only contain A-Z, a-z, 0-9, dot, underscore, hyphen, and tilde"
-DEFAULT_SECRET_MIN_LENGTH = 16
-SECRET_MIN_LENGTH_ENV = "OUTLOOK_MCP_SECRET_MIN_LENGTH"
 
 
 def build_mcp_config(
@@ -70,27 +67,9 @@ def build_endpoint_path(method: str, account: str) -> str:
     )
 
 
-def _configured_secret_min_length() -> int:
-    raw = os.environ.get(SECRET_MIN_LENGTH_ENV)
-    if raw is None:
-        return DEFAULT_SECRET_MIN_LENGTH
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ValueError(f"{SECRET_MIN_LENGTH_ENV} must be an integer") from exc
-    if value < 1:
-        raise ValueError(f"{SECRET_MIN_LENGTH_ENV} must be greater than 0")
-    return value
-
-
-def validate_secret(secret: str, *, minimum_length: int | None = None) -> None:
+def validate_secret(secret: str) -> None:
     if not secret or not SECRET_ALLOWED_PATTERN.fullmatch(secret):
         raise ValueError(INVALID_SECRET_MESSAGE)
-    required_length = (
-        minimum_length if minimum_length is not None else _configured_secret_min_length()
-    )
-    if len(secret) < required_length:
-        raise ValueError(f"secret must be at least {required_length} characters")
 
 
 def validate_mode(mode: str) -> None:

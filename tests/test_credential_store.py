@@ -303,19 +303,6 @@ def test_credential_store_register_cli(tmp_path, capsys) -> None:
     assert store.lookup_endpoint("graph", "you@outlook.com", "cli-secret-at-least-24-chars") is not None
 
 
-def test_credential_store_register_cli_uses_configured_minimum(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("OUTLOOK_MCP_SECRET_MIN_LENGTH", "8")
-    db_path = tmp_path / "outlook.sqlite3"
-
-    with pytest.raises(SystemExit):
-        credential_store_main(
-            ["register", "graph", "you@outlook.com", "abcd", "--db", str(db_path)]
-        )
-
-    store = CredentialStore(db_path)
-    assert store.lookup_endpoint("graph", "you@outlook.com", "abcd") is None
-
-
 def test_credential_store_register_cli_rejects_invalid_secret(tmp_path) -> None:
     db_path = tmp_path / "outlook.sqlite3"
 

@@ -45,7 +45,7 @@ printf 'https://outlook-mcp.example.com/graph/%s/%s\n' \
   "$OUTLOOK_MCP_ACCOUNT" "$OUTLOOK_MCP_BEARER_TOKEN"
 ```
 
-首次打开已注册的 URL 会显示 Microsoft device code 授权信息。授权完成后，MCP 客户端使用 `https://outlook-mcp.example.com/graph/you@outlook.com`，并配置同一个 `Authorization: Bearer ...` token。token 默认至少 `16 characters`，可用正整数环境变量 `OUTLOOK_MCP_SECRET_MIN_LENGTH` 调整；只允许字母、数字、`.`、`_`、`~`、`-`。公网部署仍应使用高熵 token。操作日志 URL 是授权 URL 后追加 `/log`。
+首次打开已注册的 URL 会显示 Microsoft device code 授权信息。授权完成后，MCP 客户端使用 `https://outlook-mcp.example.com/graph/you@outlook.com`，并配置同一个 `Authorization: Bearer ...` token。token 只允许字母、数字、`.`、`_`、`~`、`-`，不限制长度；公网部署仍应使用高熵 token。操作日志 URL 是授权 URL 后追加 `/log`。
 
 需要换 token 时使用 `credential_store rotate`，它会原地更新 credential，保留该 credential 的 OAuth、日志和上传隔离状态；不要重新 `register` 后误留旧 token。
 
@@ -234,7 +234,7 @@ uv run outlook-mcp
 uv run outlook-mcp-http
 ```
 
-调试时也可以用根目录启动器。启动前必须显式设置 `OUTLOOK_MCP_ACCOUNT` 和默认至少 `16 characters` 的 `OUTLOOK_MCP_BEARER_TOKEN`；可用正整数环境变量 `OUTLOOK_MCP_SECRET_MIN_LENGTH` 调整最小长度。启动器会注册该 credential，打印完整 MCP JSON，等你复制后按回车，再在当前窗口启动 HTTP 服务：
+调试时也可以用根目录启动器。启动前必须显式设置 `OUTLOOK_MCP_ACCOUNT` 和 `OUTLOOK_MCP_BEARER_TOKEN`。启动器会注册该 credential，打印完整 MCP JSON，等你复制后按回车，再在当前窗口启动 HTTP 服务：
 
 ```powershell
 $env:OUTLOOK_MCP_ACCOUNT = "you@outlook.com"
@@ -343,7 +343,7 @@ Authorization: Bearer {token}
 
 首次使用时：
 
-- 先执行 `uv run python -m outlook_mcp.credential_store register graph you@outlook.com replace-with-random-token-32-chars`。token 默认至少 `16 characters`，可用正整数环境变量 `OUTLOOK_MCP_SECRET_MIN_LENGTH` 调整；只允许字母、数字、`.`、`_`、`~`、`-`。公网部署仍应使用高熵 token。不带 `--db` 时默认写入 `~/.outlook-mcp/outlook-mcp.sqlite3`；如果 server 启动时设置了自定义 `OUTLOOK_MCP_DB`，register 必须加 `--db` 指向同一个文件。
+- 先执行 `uv run python -m outlook_mcp.credential_store register graph you@outlook.com replace-with-random-token-32-chars`。token 只允许字母、数字、`.`、`_`、`~`、`-`，不限制长度；公网部署仍应使用高熵 token。不带 `--db` 时默认写入 `~/.outlook-mcp/outlook-mcp.sqlite3`；如果 server 启动时设置了自定义 `OUTLOOK_MCP_DB`，register 必须加 `--db` 指向同一个文件。
 - MCP 客户端调用 `/{method}/{account}`，必须带 `Authorization: Bearer {token}`；如果 SQLite 里没有这个组合，会返回 `auth_required`，且不会自动创建。
 - 用户手工打开已注册的 `/{method}/{account}/{token}`，页面才会展示 Microsoft device code 授权信息。
 - 用户完成 Microsoft 登录后刷新页面；授权成功后，MCP 客户端继续使用无 token URL + Bearer header。

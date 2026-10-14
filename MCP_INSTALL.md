@@ -165,7 +165,7 @@ export OUTLOOK_MCP_MODE="calendar"
 ./start_outlook_mcp_http.sh 8000 0.0.0.0
 ```
 
-启动器要求显式提供 account 与 Bearer token，然后注册该 debug credential。token 默认至少 `16 characters`，可用正整数环境变量 `OUTLOOK_MCP_SECRET_MIN_LENGTH` 调整；只允许字母、数字、`.`、`_`、`~`、`-`。公网部署仍应使用高熵 token。
+启动器要求显式提供 account 与 Bearer token，然后注册该 debug credential。token 只允许字母、数字、`.`、`_`、`~`、`-`，不限制长度；公网部署仍应使用高熵 token。
 
 Traefik 可以在前面终止 HTTPS 并转发到本地 HTTP 服务。MCP endpoint 直接使用：
 

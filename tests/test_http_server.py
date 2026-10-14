@@ -294,24 +294,6 @@ def test_http_mcp_missing_endpoint_returns_auth_required(tmp_path) -> None:
     assert store.lookup_endpoint("graph", "person@outlook.com", "test-secret-at-least-24-chars") is None
 
 
-def test_http_mcp_bearer_uses_configured_secret_minimum(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("OUTLOOK_MCP_SECRET_MIN_LENGTH", "8")
-    store = CredentialStore(tmp_path / "outlook.sqlite3")
-    app = create_app(store=store, base_config=_graph_config(tmp_path))
-    app.mcp_app = _fake_mcp_app
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/graph/person@outlook.com",
-            json={},
-            headers={"Authorization": "Bearer short"},
-        )
-
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_secret"
-    assert "at least 8 characters" in response.json()["message"]
-
-
 def test_http_mcp_bearer_endpoint_uses_authorization_header(tmp_path) -> None:
     store = CredentialStore(tmp_path / "outlook.sqlite3")
     record = store.get_or_create_endpoint("graph", "person@outlook.com", "test-secret-at-least-24-chars")

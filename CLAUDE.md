@@ -72,7 +72,6 @@ Only draft submission obtains a `GraphClient`. Drafts remain an HTTP WebUI conce
 | `OUTLOOK_MCP_HTTP_PORT` | `8000` | Bind port for HTTP server |
 | `OUTLOOK_MCP_TRUST_PROXY_HEADERS` | — | Trust X-Forwarded-* from proxies allowed by `FORWARDED_ALLOW_IPS` (default `127.0.0.1`) |
 | `OUTLOOK_GRAPH_CLIENT_ID` | — | Overrides `graph.client_id` from the config file |
-| `OUTLOOK_MCP_SECRET_MIN_LENGTH` | `16` | Minimum Bearer token length for register/rotate |
 | `OUTLOOK_MCP_CSRF_KEY` | random per boot | Fixed HMAC key for WebUI CSRF tokens |
 | `OUTLOOK_MCP_UPLOAD_DIR` | `~/.outlook-mcp/uploads` | Upload temp directory |
 | `OUTLOOK_MCP_UPLOAD_MAX_BYTES` | `3145728` | Single upload limit (3 MiB) |

@@ -81,41 +81,5 @@ def test_validate_secret_rejects_url_escaped_characters(secret: str) -> None:
         validate_secret(secret)
 
 
-def test_validate_secret_uses_sixteen_character_default() -> None:
-    validate_secret("a" * 16)
-
-    with pytest.raises(ValueError, match="at least 16 characters"):
-        validate_secret("a" * 15)
-
-
-def test_validate_secret_uses_configured_minimum(monkeypatch) -> None:
-    monkeypatch.setenv("OUTLOOK_MCP_SECRET_MIN_LENGTH", "8")
-
-    validate_secret("abcdefgh")
-    with pytest.raises(ValueError, match="at least 8 characters"):
-        validate_secret("abcdefg")
-
-
-@pytest.mark.parametrize(
-    ("value", "message"),
-    [
-        ("invalid", "must be an integer"),
-        ("0", "must be greater than 0"),
-        ("-1", "must be greater than 0"),
-    ],
-)
-def test_validate_secret_rejects_invalid_configured_minimum(
-    monkeypatch,
-    value: str,
-    message: str,
-) -> None:
-    monkeypatch.setenv("OUTLOOK_MCP_SECRET_MIN_LENGTH", value)
-
-    with pytest.raises(ValueError, match=message):
-        validate_secret("valid-secret")
-
-
-def test_validate_secret_explicit_minimum_ignores_environment(monkeypatch) -> None:
-    monkeypatch.setenv("OUTLOOK_MCP_SECRET_MIN_LENGTH", "8")
-
-    validate_secret("x", minimum_length=1)
+def test_validate_secret_accepts_short_secret() -> None:
+    validate_secret("a")

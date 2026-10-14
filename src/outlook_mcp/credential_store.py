@@ -338,8 +338,7 @@ class CredentialStore:
         new_secret: str,
     ) -> CredentialRecord:
         """Atomically replace a registered secret without changing its credential id."""
-        # Legacy short secrets must remain rotatable, but cannot be newly registered.
-        validate_secret(old_secret, minimum_length=1)
+        validate_secret(old_secret)
         validate_secret(new_secret)
         if hmac.compare_digest(old_secret, new_secret):
             raise ValueError("new secret must differ from old secret")
